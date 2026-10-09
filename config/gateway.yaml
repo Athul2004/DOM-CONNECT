@@ -1,0 +1,15 @@
+gateway:
+  id: gw-001
+  name: DOM Connect Gateway
+  version: 0.1.0
+
+logging:
+  level: INFO
+  format: json
+
+coordinator:
+  type: ezsp
+  transport:
+    port: /dev/ttyUSB0
+    baudrate: 115200
+    flow_control: hardware

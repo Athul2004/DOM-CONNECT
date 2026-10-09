@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DOM Connect - Configuration</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- MQTT.js for live connection -->
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+</head>
+
+<body>
+    <div class="background-orbs">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+        <div class="orb orb-3"></div>
+    </div>
+
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar glass-panel">
+            <div class="logo">
+                <i class="fa-solid fa-network-wired"></i>
+                <h2>DOM Connect</h2>
+            </div>
+
+            <nav class="nav-menu">
+                <a href="#" class="nav-item active" data-target="dashboard-view">
+                    <i class="fa-solid fa-chart-pie"></i> Dashboard
+                </a>
+                <a href="#" class="nav-item" data-target="devices-view">
+                    <i class="fa-solid fa-microchip"></i> Devices
+                </a>
+                <a href="#" class="nav-item" data-target="network-view">
+                    <i class="fa-solid fa-project-diagram"></i> Network Map
+                </a>
+                <a href="#" class="nav-item" data-target="settings-view">
+                    <i class="fa-solid fa-sliders"></i> Gateway Settings
+                </a>
+            </nav>
+
+            <div class="connection-status">
+                <div class="status-indicator">
+                    <div class="dot pulse"></div>
+                    <span id="mqtt-status">Connecting to Broker...</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="topbar">
+                <div class="page-title">
+                    <h1 id="current-view-title">Dashboard Overview</h1>
+                    <p>Manage your Zigbee ecosystem</p>
+                </div>
+                <div class="actions">
+                    <button class="btn btn-primary" id="btn-permit-join">
+                        <i class="fa-solid fa-plus-circle"></i> Permit Join
+                    </button>
+                    <div class="profile-pic">
+                        <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=DOM" alt="User">
+                    </div>
+                </div>
+            </header>
+
+            <div class="content-area">
+                <!-- Dashboard View -->
+                <div id="dashboard-view" class="view-section active">
+                    <div class="stats-grid">
+                        <div class="stat-card glass-panel">
+                            <div class="stat-icon"><i class="fa-solid fa-server"></i></div>
+                            <div class="stat-info">
+                                <h3>Coordinator Status</h3>
+                                <p class="highlight text-green">Online</p>
+                            </div>
+                        </div>
+                        <div class="stat-card glass-panel">
+                            <div class="stat-icon"><i class="fa-solid fa-plug"></i></div>
+                            <div class="stat-info">
+                                <h3>Paired Devices</h3>
+                                <p class="highlight" id="total-devices">0</p>
+                            </div>
+                        </div>
+                        <div class="stat-card glass-panel">
+                            <div class="stat-icon"><i class="fa-solid fa-bolt"></i></div>
+                            <div class="stat-info">
+                                <h3>Total Messages</h3>
+                                <p class="highlight" id="total-messages">0</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-panels">
+                        <div class="panel glass-panel recent-activity">
+                            <div class="panel-header">
+                                <h2><i class="fa-solid fa-activity"></i> Live Activity</h2>
+                            </div>
+                            <div class="activity-feed" id="activity-feed">
+                                <!-- Activity items injected here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Devices View -->
+                <div id="devices-view" class="view-section hidden">
+                    <div class="panel glass-panel">
+                        <div class="panel-header">
+                            <h2>Paired Zigbee Devices</h2>
+                            <div class="search-bar">
+                                <i class="fa-solid fa-search"></i>
+                                <input type="text" placeholder="Search devices...">
+                            </div>
+                        </div>
+                        <div class="table-container" style="overflow-x: auto; margin-top: 20px;">
+                            <table class="z2m-table" style="width: 100%; border-collapse: collapse; text-align: left;">
+                                <thead>
+                                    <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                                        <th style="padding: 12px; width: 60px;">Picture</th>
+                                        <th style="padding: 12px;">Friendly name</th>
+                                        <th style="padding: 12px;">IEEE address</th>
+                                        <th style="padding: 12px;">Manufacturer</th>
+                                        <th style="padding: 12px;">Model</th>
+                                        <th style="padding: 12px;">State</th>
+                                        <th style="padding: 12px; text-align: right;">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="devices-table-body">
+                                    <!-- Device Rows Injected Here -->
+                                    <tr class="empty-state">
+                                        <td colspan="7"
+                                            style="text-align: center; padding: 30px; color: var(--text-muted);">
+                                            <i class="fa-solid fa-box-open"
+                                                style="font-size: 2em; margin-bottom: 10px; display: block;"></i>
+                                            No devices found. Click "Permit Join" to pair a new device.
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Settings View -->
+                <div id="settings-view" class="view-section hidden">
+                    <div class="panel glass-panel settings-panel">
+                        <h2>Gateway Configuration</h2>
+                        <form id="settings-form">
+                            <div class="form-group">
+                                <label>MQTT Broker URL (WebSocket)</label>
+                                <input type="text" id="mqtt-url" value="ws://192.168.0.180:8080" class="glass-input">
+                            </div>
+                            <div class="form-group">
+                                <label>Zigbee Channel</label>
+                                <select class="glass-input">
+                                    <option>11</option>
+                                    <option>15</option>
+                                    <option>20</option>
+                                    <option>25</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Transmit Power (dBm)</label>
+                                <input type="range" min="3" max="20" value="8" class="glass-slider">
+                            </div>
+                            <button type="button" class="btn btn-primary">Save Configuration</button>
+                        </form>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <div class="modal-overlay hidden" id="join-modal">
+        <div class="modal glass-panel">
+            <h2>Permit Join Active</h2>
+            <div class="radar-animation">
+                <div class="radar-pulse"></div>
+            </div>
+            <p>Searching for new Zigbee devices... <span id="countdown">60</span>s</p>
+            <button class="btn btn-danger" id="btn-cancel-join">Cancel</button>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>

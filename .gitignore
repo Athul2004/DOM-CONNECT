@@ -1,0 +1,7 @@
+build/
+.vscode/
+database.json
+*.o
+*.a
+*.so
+.DS_Store

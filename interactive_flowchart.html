@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Zigbee Gateway Flowchart</title>
+    <!-- Load Mermaid.js to render the diagram interactively -->
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        mermaid.initialize({ startOnLoad: true, theme: 'dark' });
+    </script>
+    <style>
+        body {
+            background-color: #1e1e1e;
+            color: #ffffff;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h2 { margin-bottom: 5px; }
+        p { color: #aaaaaa; margin-bottom: 20px; font-size: 14px; }
+        .mermaid {
+            background-color: #252526;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            max-width: 95%;
+            overflow-x: auto;
+        }
+        /* Make it easy to grab and scroll horizontally */
+        .mermaid::-webkit-scrollbar {
+            height: 12px;
+        }
+        .mermaid::-webkit-scrollbar-track {
+            background: #1e1e1e;
+        }
+        .mermaid::-webkit-scrollbar-thumb {
+            background: #555;
+            border-radius: 6px;
+        }
+        .mermaid::-webkit-scrollbar-thumb:hover {
+            background: #777;
+        }
+    </style>
+</head>
+<body>
+    <h2>Interactive Zigbee Gateway Execution Flow</h2>
+    <p>Scroll horizontally to view the full timeline. Hover over elements to trace connections.</p>
+    
+    <div class="mermaid">
+sequenceDiagram
+    autonumber
+    
+    participant Main as main.c (App)
+    participant Adapter as ezsp_adapter.c
+    participant EZSP as ezsp_handler.c
+    participant ASH as ash.c (Framing)
+    participant UART as uart_transport.c
+    participant OS as Linux (termios)
+    participant NCP as Dongle (EFR32MG)
+    participant MQTT as mqtt_handler.c
+
+    Main->>Adapter: 1. ezsp_adapter_create(cfg)
+    Main->>Adapter: 2. adapter->start()
+    
+    rect rgb(30, 40, 50)
+    Note over Adapter, OS: Phase A: Open Serial Port
+    Adapter->>UART: transport->open("/dev/ttyUSB0")
+    UART->>OS: open(), tcsetattr()
+    Note right of UART: Configures raw mode, 115200 baud, 8N1
+    OS-->>UART: File Descriptor Ready
+    UART-->>Adapter: GW_OK
+    end
+
+    rect rgb(30, 50, 40)
+    Note over Adapter, NCP: Phase B: ASH Reset Handshake
+    Adapter->>ASH: ash_reset()
+    ASH->>UART: transport->write([0xC0, CRC, 0x7E])
+    UART->>NCP: Transmit RST Frame (over USB)
+    Note right of NCP: Chip hard reboots
+    NCP-->>UART: Receive RSTACK Frame
+    UART-->>ASH: Raw Bytes
+    ASH->>ASH: Unstuff bytes & Verify CRC
+    ASH-->>Adapter: GW_OK (ASH Connected)
+    end
+
+    rect rgb(50, 30, 40)
+    Note over Adapter, NCP: Phase C: EZSP Initialization
+    Adapter->>EZSP: ezsp_negotiate_version(13)
+    EZSP->>ASH: ash_send_and_receive()
+    ASH->>NCP: DATA Frame [VERSION command]
+    NCP-->>ASH: DATA Frame [VERSION response]
+    ASH-->>EZSP: Payload bytes
+    EZSP-->>Adapter: GW_OK (Version: 13, Stack: 7.3)
+    
+    Adapter->>EZSP: ezsp_get_eui64()
+    EZSP-->>Adapter: GW_OK (MAC Address)
+    
+    Adapter->>EZSP: ezsp_get_node_id()
+    EZSP-->>Adapter: GW_OK (Node ID: 0x0000)
+    
+    Adapter->>EZSP: ezsp_get_network_state()
+    EZSP-->>Adapter: GW_OK (State: 0=No Network)
+    end
+
+    Adapter-->>Main: GW_OK
+    Note left of Main: Prints Coordinator ready to console.
+    
+    rect rgb(60, 50, 40)
+    Note over Main, NCP: Phase I: Network Formation
+    alt network_state == 0
+        Main->>Adapter: adapter->form_network()
+        Adapter->>EZSP: EZSP_CMD_SET_INITIAL_SECURITY_STATE
+        EZSP-->>Adapter: OK
+        Adapter->>EZSP: EZSP_CMD_FORM_NETWORK
+        EZSP-->>Adapter: OK
+        Adapter-->>Main: OK
+    end
+    end
+    
+    rect rgb(50, 40, 30)
+    Note over Main, NCP: Phase E: Permit Join & Device Discovery
+    Main->>Adapter: adapter->permit_join(60)
+    Adapter->>EZSP: ezsp_set_permit_joining(60)
+    EZSP->>NCP: SET_PERMIT_JOINING (0x22)
+    NCP-->>EZSP: Success
+    EZSP-->>Adapter: GW_OK
+    Adapter-->>Main: GW_OK (Log: Permit joining enabled)
+    end
+    
+    rect rgb(50, 60, 50)
+    Note over Main, MQTT: Phase K, L, N: Discovery, DB, & HA
+    NCP-->>EZSP: TRUST_CENTER_JOIN_HANDLER
+    EZSP->>Adapter: process_async_frame()
+    Adapter->>Main: on_device_join()
+    Note left of Main: Phase L: db_update_device() -> database.json
+    Main->>MQTT: mqtt_publish_ha_discovery()
+    Note right of MQTT: Phase N: Publishes to homeassistant/switch/...
+    Main->>Adapter: adapter->send_unicast(ZDO Active_EP_req)
+    Adapter->>EZSP: EZSP_CMD_SEND_UNICAST
+    EZSP-->>NCP: TX: Active_EP_req
+    NCP-->>EZSP: INCOMING_MESSAGE_HANDLER (ZDO Active_EP_rsp)
+    EZSP->>Adapter: process_async_frame()
+    Adapter->>Main: Logs Endpoints Discovered
+    end
+    
+    rect rgb(30, 50, 60)
+    Note over Main, NCP: Phase F: ZCL Command Processing
+    NCP-->>EZSP: INCOMING_MESSAGE_HANDLER (0x45)
+    Note left of NCP: End device sends ZCL Report
+    EZSP->>Adapter: process_async_frame()
+    Adapter->>Main: on_zcl_message()
+    Main->>MQTT: mqtt_publish_zcl_message()
+    Note right of MQTT: Phase J: ZCL Payload Parser
+    MQTT->>MQTT: zcl_parse_payload()
+    Note right of MQTT: Publishes JSON { "zcl": { "attributes": { "attr_0x0000": ... } } } to broker
+    end
+    
+    rect rgb(60, 40, 50)
+    Note over Main, MQTT: Phase H & M: Outbound Semantic Control
+    MQTT->>Main: on_mqtt_command (from /set topic)
+    Note left of MQTT: Phase M: Translates {"state":"ON"} to hex 010001
+    Main->>Adapter: adapter->send_unicast()
+    Adapter->>EZSP: EZSP_CMD_SEND_UNICAST (0x34)
+    EZSP-->>NCP: TX: ZCL Command (e.g. On/Off)
+    end
+    
+    rect rgb(40, 40, 60)
+    Note over Main, NCP: Phase D: Main Event Loop
+    loop Every 30 seconds
+        Main->>Adapter: adapter->health_check()
+        Adapter->>EZSP: ezsp_nop()
+        EZSP->>NCP: NOP Command
+        NCP-->>EZSP: NOP Response
+        EZSP-->>Adapter: GW_OK
+        Adapter-->>Main: GW_OK (Log: Health check passed)
+    end
+    end
+    </div>
+</body>
+</html>
