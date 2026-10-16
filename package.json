@@ -1,0 +1,14 @@
+{
+  "name": "dom-zigbee2mqtt-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Integrated Zigbee2MQTT ecosystem with herdsman, converters and frontends",
+  "scripts": {
+    "build:herdsman": "pnpm --filter zigbee-herdsman run build",
+    "build:converters": "pnpm --filter zigbee-herdsman-converters run build",
+    "build:frontends": "pnpm --filter zigbee2mqtt-frontend run build && pnpm --filter zigbee2mqtt-windfront run build",
+    "build:z2m": "pnpm --filter zigbee2mqtt run build",
+    "build:all": "pnpm run build:herdsman && pnpm run build:converters && pnpm run build:frontends && pnpm run build:z2m",
+    "start": "pnpm --filter zigbee2mqtt start"
+  }
+}

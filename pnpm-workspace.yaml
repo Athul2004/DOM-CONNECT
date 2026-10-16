@@ -1,0 +1,22 @@
+packages:
+  - "zigbee-herdsman"
+  - "zigbee-herdsman-converters"
+  - "zigbee2mqtt"
+  - "zigbee2mqtt-frontend"
+  - "zigbee2mqtt-windfront"
+
+verifyDepsBeforeRun: false
+
+allowBuilds:
+  "@parcel/watcher": true
+  "@serialport/bindings-cpp": true
+  "core-js": true
+  "core-js-pure": true
+  "esbuild": true
+  unix-dgram: false
+
+minimumReleaseAgeExclude:
+  - zigbee-herdsman
+  - zigbee-herdsman-converters
+  - zigbee2mqtt-windfront
+  - zigbee2mqtt-frontend
