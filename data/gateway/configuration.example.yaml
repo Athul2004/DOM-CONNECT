@@ -1,0 +1,43 @@
+# ==============================================================================
+#  DOM ECOSYSTEM - GATEWAY CONFIGURATION
+#  Default settings for Orange Pi Zero 3 / Orange Pi Gateway Appliance
+# ==============================================================================
+
+homeassistant:
+  enabled: true
+
+# MQTT Broker Configuration
+mqtt:
+  base_topic: dom_connect
+  server: mqtt://localhost:1883
+  # user: dom_admin
+  # password: dom_secure_password
+
+# Serial Zigbee Coordinator Configuration
+serial:
+  port: /dev/ttyUSB0
+  # adapter: ember      # Options: ember (Silicon Labs EFR32MG/EZSP), zstack (TI CC2652/CC1352), deconz (ConBee)
+  # baudrate: 115200    # Default: 115200 (EZSP/ZStack) or 230400 (Ember v12+)
+  # rtscts: false       # Hardware flow control
+
+# Frontend Web Interface Configuration
+frontend:
+  port: 8080
+  host: 0.0.0.0
+  package: zigbee2mqtt-windfront
+
+# Advanced Logging & Diagnostics
+advanced:
+  log_level: info
+  log_output:
+    - console
+  network_key: GENERATE
+  pan_id: GENERATE
+  channel: 15
+
+# Device Availability Monitoring
+availability:
+  active:
+    timeout: 10
+  passive:
+    timeout: 1500

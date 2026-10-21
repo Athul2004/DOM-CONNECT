@@ -1,0 +1,49 @@
+# ==============================================================================
+#  DOM ECOSYSTEM - ENTERPRISE ZIGBEE GATEWAY
+#  Proprietary & Confidential - (c) 2026 DOM ECOSYSTEM Inc.
+# ==============================================================================
+#  Docker Compose configuration for deployment on Orange Pi / ARM64 single-board
+#  computers. Includes embedded Mosquitto MQTT Broker and DOM Connect Gateway.
+# ==============================================================================
+
+services:
+  # ----------------------------------------------------------------------------
+  # Internal MQTT Broker (Eclipse Mosquitto)
+  # ----------------------------------------------------------------------------
+  mqtt-broker:
+    image: eclipse-mosquitto:2.0
+    container_name: dom-mqtt-broker
+    restart: always
+    network_mode: host
+    volumes:
+      - ./data/mosquitto/config:/mosquitto/config
+      - ./data/mosquitto/data:/mosquitto/data
+      - ./data/mosquitto/log:/mosquitto/log
+    environment:
+      - TZ=UTC
+
+  # ----------------------------------------------------------------------------
+  # DOM Connect Zigbee Gateway Core Engine & Windfront UI
+  # ----------------------------------------------------------------------------
+  dom-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dom-ecosystem/dom-connect:latest
+    container_name: dom-connect-gateway
+    restart: always
+    network_mode: host
+    privileged: false
+    # Serial coordinator device passthrough (adjust port according to your coordinator)
+    devices:
+      - /dev/ttyUSB0:/dev/ttyUSB0
+      # - /dev/ttyACM0:/dev/ttyACM0
+      # - /dev/ttyS1:/dev/ttyS1
+    volumes:
+      - ./data/gateway:/app/data
+      - /run/udev:/run/udev:ro
+    environment:
+      - TZ=UTC
+      - ZIGBEE2MQTT_DATA=/app/data
+    depends_on:
+      - mqtt-broker

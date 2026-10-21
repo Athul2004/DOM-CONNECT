@@ -18,3 +18,13 @@ desktop.ini
 .env
 .env.local
 .env.*.local
+
+# Runtime Gateway & Broker Data
+data/gateway/configuration.yaml
+data/gateway/*.db
+data/gateway/*.json
+data/gateway/log/
+data/mosquitto/data/
+data/mosquitto/log/
+*.tar.gz.temp
+
