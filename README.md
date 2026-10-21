@@ -9,7 +9,7 @@
 
 <br />
 
-[![Company: Dominate Eco Venture](https://img.shields.io/badge/Company-Dominate%20Eco%20Venture%20PVT%20LTD-6366F1.svg?style=for-the-badge)](https://dominateecoventure.com)
+[![Company: Dominate Eco Venture](https://img.shields.io/badge/Company-Dominate%20Eco%20Venture%20PVT%20LTD-6366F1.svg?style=for-the-badge)](https://dominatee.com/)
 [![License: Proprietary](https://img.shields.io/badge/License-Proprietary%20%26%20Confidential-red.svg?style=for-the-badge)](LICENSE)
 [![Platform: Orange Pi](https://img.shields.io/badge/Hardware-Orange%20Pi%20(ARM64)-orange.svg?style=for-the-badge&logo=arm)](https://www.orangepi.org/)
 [![Docker](https://img.shields.io/badge/Deployment-Docker%20%7C%20Compose-2496ED.svg?style=for-the-badge&logo=docker)](docker-compose.yml)
