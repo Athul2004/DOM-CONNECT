@@ -1,9 +1,15 @@
 <div align="center">
 
+<img src="docs/images/dom_logo.png" alt="Dominate Eco Venture Dolphin Logo" width="220" style="filter: drop-shadow(0 4px 16px rgba(139, 92, 246, 0.45));" />
+
 # DOM ECOSYSTEM™
 ### DOM Connect™ Enterprise Zigbee Gateway Appliance
-**Production-Grade Edge Firmware & Operating Runtime for Orange Pi / ARM64 Embedded Platforms**
+**Proprietary Edge Firmware & Operating Runtime by Dominate Eco Venture PVT LTD**  
+*Optimized for Orange Pi (ARM64 / aarch64) Single-Board Edge Systems*
 
+<br />
+
+[![Company: Dominate Eco Venture](https://img.shields.io/badge/Company-Dominate%20Eco%20Venture%20PVT%20LTD-6366F1.svg?style=for-the-badge)](https://dominateecoventure.com)
 [![License: Proprietary](https://img.shields.io/badge/License-Proprietary%20%26%20Confidential-red.svg?style=for-the-badge)](LICENSE)
 [![Platform: Orange Pi](https://img.shields.io/badge/Hardware-Orange%20Pi%20(ARM64)-orange.svg?style=for-the-badge&logo=arm)](https://www.orangepi.org/)
 [![Docker](https://img.shields.io/badge/Deployment-Docker%20%7C%20Compose-2496ED.svg?style=for-the-badge&logo=docker)](docker-compose.yml)
@@ -20,7 +26,7 @@
   | | | | | | | |\/| | |  _|| |  | | | \___ \\ V /\___ \ | | |  _| | |\/| |
   | |_| | |_| | |  | | | |__| |__| |_| |___) || |  ___) || | | |___| |  | |
   |____/ \___/|_|  |_| |_____\____\___/|____/ |_| |____/ |_| |_____|_|  |_|
-                               DOM CONNECT GATEWAY
+              DOMINATE ECO VENTURE PVT LTD — DOM CONNECT GATEWAY
 ========================================================================================
 ```
 
@@ -29,8 +35,8 @@
 ---
 
 > [!CAUTION]
-> **PROPRIETARY AND CONFIDENTIAL**  
-> This software, documentation, and underlying hardware schematics contain strictly confidential and proprietary intellectual property belonging to **DOM ECOSYSTEM Inc.** Unauthorized copying, reverse engineering, redistribution, or modification of this codebase, via any medium, is strictly prohibited without prior express written consent from DOM ECOSYSTEM Inc.
+> **PROPRIETARY AND CONFIDENTIAL — DOMINATE ECO VENTURE PVT LTD**  
+> This software, documentation, and underlying hardware schematics contain strictly confidential and proprietary trade secrets belonging to **Dominate Eco Venture PVT LTD**. Unauthorized copying, reverse engineering, redistribution, commercial deployment, or modification of this codebase, via any medium, is strictly prohibited without prior express written consent from Dominate Eco Venture PVT LTD.
 
 ---
 
@@ -54,12 +60,14 @@
 
 ## 1. Executive Overview
 
-**DOM Connect™** is the industrial-grade edge gateway firmware of the **DOM ECOSYSTEM™**, engineered specifically for high-availability Internet of Things (IoT) deployments. Running on low-power, cost-optimized **Orange Pi ARM64 single-board computers**, the gateway connects hundreds of Zigbee 3.0 sensors, relays, lighting modules, and climate controllers directly into the centralized DOM Cloud and local management dashboards.
+**DOM Connect™** is the flagship industrial-grade edge gateway firmware of the **DOM ECOSYSTEM™**, developed by **Dominate Eco Venture PVT LTD**. Engineered specifically for high-availability Internet of Things (IoT) deployments, commercial building automation, smart agriculture, and residential ecosystems.
+
+Running on low-power, cost-effective **Orange Pi ARM64 single-board computers**, the gateway connects hundreds of Zigbee 3.0 sensors, relays, lighting modules, and energy monitors directly into the centralized Dominate Eco Venture Cloud and local management dashboards.
 
 ### Core Capabilities:
 - **Comprehensive Hardware Abstraction**: Native support for Silicon Labs (EZSP/Ember) and Texas Instruments (Z-Stack) radio coordinators.
-- **Embedded Monorepo Engine**: Full vertical integration of the communication stack (`herdsman`), custom converter schemas (`converters`), and core MQTT engine (`zigbee2mqtt`).
-- **DOM Windfront OS**: Proprietary, glassmorphic real-time administration dashboard optimized for mobile, tablet, and desktop diagnostics.
+- **Integrated Monorepo Engine**: Full vertical integration of the communication stack (`zigbee-herdsman`), proprietary converter schemas (`zigbee-herdsman-converters`), and core MQTT engine (`zigbee2mqtt`).
+- **DOM Windfront OS**: Proprietary, glassmorphic real-time administration dashboard with custom branding, optimized for mobile, tablet, and desktop diagnostics.
 - **Containerized Edge Deployment**: Turn-key Docker & Docker Compose orchestration with automated health checks, minimal footprint, and zero-downtime recovery.
 - **Local Autonomy**: Operates 100% offline without mandatory internet connectivity, retaining complete device state, bindings, and local automation rules.
 
@@ -71,6 +79,7 @@ The DOM Connect repository is structured as a high-performance **PNPM Workspace 
 
 ```
 DOM-CONNECT/
+├── docs/images/dom_logo.png       # Dominate Eco Venture Dolphin Logo
 ├── docker-compose.yml             # Production Docker stack definition for Orange Pi
 ├── Dockerfile                     # Multi-stage ARM64/AMD64 hardened container image
 ├── package.json                   # Root monorepo workspace orchestration
@@ -80,7 +89,7 @@ DOM-CONNECT/
 │   └── mosquitto/                 # Embedded MQTT broker database & logs
 │
 ├── zigbee-herdsman/               # Hardware Abstraction Layer (HAL) for Zigbee radio SoC
-├── zigbee-herdsman-converters/    # DOM proprietary device definitions & ZCL clusters
+├── zigbee-herdsman-converters/    # Dominate Eco Venture proprietary device definitions
 ├── zigbee2mqtt/                   # Core gateway event bus, routing engine & MQTT bridge
 ├── zigbee2mqtt-windfront/         # DOM Windfront branded real-time web interface
 └── zigbee2mqtt-frontend/          # Fallback diagnostic web interface
@@ -107,7 +116,7 @@ graph TD
         direction TB
         subgraph DOM Gateway Container
             HAL[zigbee-herdsman<br/>Radio Driver Layer]
-            CONV[zigbee-herdsman-converters<br/>Device Schemas]
+            CONV[zigbee-herdsman-converters<br/>Dominate Device Schemas]
             CORE[zigbee2mqtt<br/>Event Bus & State Machine]
             UI[DOM Windfront UI<br/>Port 8080]
         end
@@ -116,10 +125,10 @@ graph TD
         end
     end
 
-    subgraph Consumers [Local & Remote Consumer Layer]
+    subgraph Consumers [Dominate Eco Venture Consumer Layer]
         APP[DOM Mobile & Web App]
         HA[Home Assistant / BACnet]
-        CLOUD[DOM Enterprise Cloud]
+        CLOUD[Dominate Cloud Platform]
     end
 
     Z1 & Z2 & Z3 & Z4 -->|Zigbee 3.0 Mesh 2.4 GHz| COORD
@@ -136,7 +145,7 @@ graph TD
 
 ## 3. Hardware Specifications (Orange Pi)
 
-DOM Connect is fully certified and optimized for the **Orange Pi Zero 3**, while remaining backward and forward compatible with the entire Orange Pi family:
+DOM Connect is fully certified and optimized for the **Orange Pi Zero 3**, while remaining compatible across the Orange Pi embedded family:
 
 | Specification | Primary Target: Orange Pi Zero 3 | Compatible Alternates |
 | :--- | :--- | :--- |
@@ -157,7 +166,6 @@ Before deploying the Docker stack, prepare your Orange Pi board with clean seria
 
 ### 4.1. Connect to Orange Pi via SSH
 ```bash
-# Connect to your Orange Pi (default username is usually orangepi or root)
 ssh orangepi@<ORANGE_PI_IP_ADDRESS>
 ```
 
@@ -173,7 +181,7 @@ sudo apt-get install -y curl git udev htop ca-certificates gnupg
 curl -fsSL https://get.docker.com -o get-docker.sh
 sudo sh get-docker.sh
 
-# Add current user to the docker group
+# Add current user to docker and dialout groups
 sudo usermod -aG docker $USER
 sudo usermod -aG dialout $USER
 
@@ -189,17 +197,12 @@ docker compose version
 ### 4.4. Identify & Lock Serial Coordinator Port
 Plug your Zigbee Coordinator into the USB port of the Orange Pi. Verify detection:
 ```bash
-# Check detected USB serial devices
 ls -l /dev/ttyUSB* /dev/ttyACM* 2>/dev/null
 ```
 
 To prevent port shifting (e.g. `/dev/ttyUSB0` turning into `/dev/ttyUSB1` after a reboot), identify the unique device ID:
 ```bash
 ls -l /dev/serial/by-id/
-```
-Example output:
-```
-/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0 -> ../../ttyUSB0
 ```
 
 #### Create Persistent Udev Rule (Recommended for Production)
@@ -216,7 +219,7 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 
 ## 5. Docker Deployment Workflows
 
-DOM ECOSYSTEM supports three standard workflows for deploying the firmware to an Orange Pi.
+Dominate Eco Venture supports three standard workflows for deploying the firmware to an Orange Pi.
 
 ---
 
@@ -226,7 +229,6 @@ Use this method when deploying directly to an Orange Pi connected to the network
 
 #### Step 1: Clone the Repository to the Orange Pi
 ```bash
-# Navigate to the target deployment directory
 cd /opt
 sudo git clone https://github.com/Athul2004/DOM-CONNECT.git dom-connect
 sudo chown -R $USER:$USER /opt/dom-connect
@@ -234,7 +236,6 @@ cd /opt/dom-connect
 ```
 
 #### Step 2: Configure Environment & Persistent Data
-Create the persistent directories and default configuration:
 ```bash
 # Ensure directories exist
 mkdir -p data/gateway data/mosquitto/config data/mosquitto/data data/mosquitto/log
@@ -274,7 +275,7 @@ http://<ORANGE_PI_IP_ADDRESS>:8080
 
 ### Workflow B: Cross-Compilation on Workstation & Image Upload (Golden Image)
 
-Use this method to generate a pre-built binary image on your development machine (x86_64 or Apple Silicon) and flash/upload it directly to the Orange Pi without needing build tools or compiling on the board.
+Use this method to generate a pre-built binary image on your development machine (x86_64 or Apple Silicon) and upload it directly to the Orange Pi without needing compilation on the board.
 
 ```mermaid
 sequenceDiagram
@@ -324,7 +325,6 @@ scp -r data orangepi@<ORANGE_PI_IP>:/opt/dom-connect/
 ```
 
 #### Step 4: Load and Launch on Orange Pi
-SSH into the Orange Pi and start the service:
 ```bash
 ssh orangepi@<ORANGE_PI_IP>
 cd /opt/dom-connect
@@ -342,7 +342,7 @@ docker compose up -d
 
 For automated industrial fleets and OTA firmware updates:
 
-1. **Tag & Push to Corporate Registry (e.g., GitHub Packages / Harbor / AWS ECR):**
+1. **Tag & Push to Corporate Registry:**
    ```bash
    docker tag dom-ecosystem/dom-connect:latest ghcr.io/athul2004/dom-connect:v1.0.0
    docker push ghcr.io/athul2004/dom-connect:v1.0.0
@@ -368,7 +368,7 @@ All configuration is maintained in [`data/gateway/configuration.yaml`](file:///c
 
 ```yaml
 # ==============================================================================
-#  DOM ECOSYSTEM - GATEWAY APPLIANCE CONFIGURATION
+#  DOMINATE ECO VENTURE PVT LTD — GATEWAY APPLIANCE CONFIGURATION
 # ==============================================================================
 
 # Home Assistant MQTT Discovery integration
@@ -418,7 +418,6 @@ availability:
 To ensure seamless operation on embedded Linux:
 
 ### 1. Serial Passthrough in `docker-compose.yml`
-Ensure your serial adapter is mapped from host to container:
 ```yaml
 devices:
   - /dev/ttyUSB0:/dev/ttyUSB0
@@ -446,7 +445,7 @@ To ensure the DOM Gateway automatically launches on boot and recovers from unexp
 Create `/etc/systemd/system/dom-gateway.service`:
 ```ini
 [Unit]
-Description=DOM ECOSYSTEM - Connect Zigbee Gateway Appliance
+Description=DOM ECOSYSTEM - Connect Zigbee Gateway Appliance (Dominate Eco Venture)
 Requires=docker.service
 After=docker.service network-online.target
 Wants=network-online.target
@@ -502,20 +501,22 @@ tar -czvf dom-backup-$(date +%F).tar.gz /opt/dom-connect/data
 ## 10. Intellectual Property & Support
 
 ### Proprietary License Terms
-Copyright © 2026 **DOM ECOSYSTEM Inc.** All Rights Reserved.
+Copyright © 2026 **Dominate Eco Venture PVT LTD**. All Rights Reserved.
 
-- This software and associated documentation files are the proprietary property of **DOM ECOSYSTEM Inc.**
-- Commercial use, deployment in non-DOM branded appliances, reverse engineering, decompilation, and unauthorized distribution are punishable under international intellectual property and commercial copyright laws.
+- This software and associated documentation files are the proprietary property of **Dominate Eco Venture PVT LTD**.
+- Commercial use, deployment in unauthorized third-party appliances, reverse engineering, decompilation, and unauthorized distribution are strictly prohibited under national and international intellectual property laws.
 
 ### Enterprise Engineering Support
 For industrial hardware licensing, custom Zigbee cluster definitions, or white-label appliance deployments:
 
-- **Enterprise Portal**: [https://domecosystem.io](https://domecosystem.io)
-- **Technical Inquiries**: `engineering@domecosystem.io`
-- **Security Disclosures**: `security@domecosystem.io`
+- **Corporate Portal**: [https://dominateecoventure.com](https://dominateecoventure.com)
+- **Technical Inquiries**: `engineering@dominateecoventure.com`
+- **Security Disclosures**: `security@dominateecoventure.com`
 
 ---
 
 <div align="center">
-<b>DOM ECOSYSTEM™ — Intelligent, Autonomous, Enterprise-Grade IoT Infrastructure.</b>
+<img src="docs/images/dom_logo.png" alt="Dominate Eco Venture Dolphin Logo" width="80" style="opacity: 0.85;" />
+<br />
+<b>Dominate Eco Venture PVT LTD — Powering Intelligent, Resilient, Enterprise IoT Infrastructure.</b>
 </div>
