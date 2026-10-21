@@ -509,9 +509,9 @@ Copyright © 2026 **Dominate Eco Venture PVT LTD**. All Rights Reserved.
 ### Enterprise Engineering Support
 For industrial hardware licensing, custom Zigbee cluster definitions, or white-label appliance deployments:
 
-- **Corporate Portal**: [https://dominateecoventure.com](https://dominateecoventure.com)
-- **Technical Inquiries**: `engineering@dominateecoventure.com`
-- **Security Disclosures**: `security@dominateecoventure.com`
+- **Corporate Portal**: [https://dominatee.com/](https://dominatee.com/)
+- **Technical Inquiries**: `athuls.eng@gmail.com`
+  
 
 ---
 
