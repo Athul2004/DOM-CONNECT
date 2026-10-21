@@ -1,0 +1,23 @@
+{
+    "compilerOptions": {
+        "allowSyntheticDefaultImports": true,
+        "module": "NodeNext",
+        "esModuleInterop": true,
+        "target": "ES2022",
+        "lib": ["ES2022"],
+        "strict": true,
+        "noImplicitAny": true,
+        "noImplicitThis": true,
+        "sourceMap": true,
+        "declaration": true,
+        "declarationMap": true,
+        "outDir": "dist",
+        "resolveJsonModule": true,
+        "incremental": true,
+        "composite": true,
+        "rootDir": "src",
+        "checkJs": true
+    },
+    "include": ["src/**/*.ts", "src/**/*.json"],
+    "exclude": ["src/deprecated"]
+}

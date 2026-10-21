@@ -1,0 +1,9 @@
+.vscode
+.github
+coverage
+node_modules
+screenshots
+scripts
+test
+.dockerignore
+Dockerfile

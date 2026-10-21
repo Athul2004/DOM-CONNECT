@@ -1,0 +1,100 @@
+import { memo, useCallback, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { Device, Group, Scene } from "../../types.js";
+import { sendMessage } from "../../websocket/WebSocketManager.js";
+import Button from "../Button.js";
+import ConfirmButton from "../ConfirmButton.js";
+import ScenePicker from "../pickers/ScenePicker.js";
+import { getScenes } from "./index.js";
+
+interface RecallRemoveProps {
+    sourceIdx: number;
+    target: Device | Group;
+}
+
+const RecallRemove = memo(({ sourceIdx, target }: RecallRemoveProps) => {
+    const { t } = useTranslation(["scene", "common"]);
+    const [scene, setScene] = useState<Scene>({ id: 0, name: "Scene 0" });
+    const scenes = useMemo(() => getScenes(target), [target]);
+
+    const onSceneSelected = useCallback(
+        (sceneId: number) => {
+            const foundScene = scenes.find((s) => s.id === sceneId);
+
+            if (foundScene !== undefined) {
+                setScene(foundScene);
+            } else {
+                setScene({ id: sceneId, name: `Scene ${sceneId}` });
+            }
+        },
+        [scenes],
+    );
+
+    const onRecallClick = useCallback(
+        async () =>
+            await sendMessage<"{friendlyNameOrId}/set">(
+                sourceIdx,
+                // @ts-expect-error templated API endpoint
+                `${target.friendly_name}/set`, // TODO: swap to ID/ieee_address
+                { scene_recall: scene.id },
+            ),
+        [sourceIdx, target.friendly_name, scene.id],
+    );
+
+    const onRemoveClick = useCallback(
+        async () =>
+            await sendMessage<"{friendlyNameOrId}/set">(
+                sourceIdx,
+                // @ts-expect-error templated API endpoint
+                `${target.friendly_name}/set`, // TODO: swap to ID/ieee_address
+                { scene_remove: scene.id },
+            ),
+        [sourceIdx, target.friendly_name, scene.id],
+    );
+
+    const onRemoveAllClick = useCallback(
+        async () =>
+            await sendMessage<"{friendlyNameOrId}/set">(
+                sourceIdx,
+                // @ts-expect-error templated API endpoint
+                `${target.friendly_name}/set`, // TODO: swap to ID/ieee_address
+                { scene_remove_all: "" },
+            ),
+        [sourceIdx, target.friendly_name],
+    );
+
+    return (
+        <>
+            <h2 className="text-lg font-semibold">{t(($) => $.manage_scenes_header)}</h2>
+            <div className="mb-3">
+                <ScenePicker onSceneSelected={onSceneSelected} scenes={scenes} />
+            </div>
+            <div className="join join-horizontal w-full">
+                <Button disabled={!scene} onClick={onRecallClick} className="btn btn-success join-item flex-1">
+                    {t(($) => $.recall)}
+                </Button>
+                <ConfirmButton
+                    disabled={!scene}
+                    onClick={onRemoveClick}
+                    className="btn btn-error join-item flex-1"
+                    title={t(($) => $.remove, { ns: "common" })}
+                    modalDescription={t(($) => $.dialog_confirmation_prompt, { ns: "common" })}
+                    modalCancelLabel={t(($) => $.cancel, { ns: "common" })}
+                >
+                    {t(($) => $.remove, { ns: "common" })}
+                </ConfirmButton>
+                <ConfirmButton
+                    onClick={onRemoveAllClick}
+                    className="btn btn-error btn-outline join-item flex-1"
+                    title={t(($) => $.remove_all)}
+                    modalDescription={t(($) => $.dialog_confirmation_prompt, { ns: "common" })}
+                    modalCancelLabel={t(($) => $.cancel, { ns: "common" })}
+                >
+                    {t(($) => $.remove_all)}
+                </ConfirmButton>
+            </div>
+        </>
+    );
+});
+
+export default RecallRemove;

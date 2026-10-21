@@ -1,0 +1,11 @@
+node_modules/
+coverage/
+dist/
+.idea
+temp/
+typedoc/
+.remote-sync.json
+tsconfig.tsbuildinfo
+
+# MacOS indexing files
+.DS_Store

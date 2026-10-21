@@ -1,0 +1,47 @@
+name: Publish typedoc on Github Pages
+
+on:
+    release:
+        types:
+            - published
+    workflow_dispatch:
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+        steps:
+            - uses: actions/checkout@v7
+            - uses: pnpm/action-setup@v6
+            - uses: actions/setup-node@v7
+              with:
+                  node-version: 24
+                  registry-url: https://registry.npmjs.org/
+                  cache: pnpm
+
+            - run: pnpm install --frozen-lockfile
+            - run: pnpm add -g typedoc
+
+            - name: Generate docs
+              run: typedoc --gitRevision "$(git describe --tag --abbrev=0)" --tsconfig tsconfig.json --excludePrivate --excludeProtected --excludeExternals --entryPointStrategy expand ./src --sourceLinkTemplate "https://github.com/Koenkk/zigbee-herdsman/blob/{gitRevision}/{path}#L{line}" -out typedoc
+
+            - uses: actions/upload-pages-artifact@v5
+              with:
+                  name: github-pages
+                  # typedoc "out" path
+                  path: ./typedoc
+
+    deploy:
+        needs: build
+        runs-on: ubuntu-latest
+        permissions:
+            pages: write # to deploy to Pages
+            id-token: write # to verify the deployment originates from an appropriate source
+        environment:
+            name: github-pages
+            url: ${{ steps.deployment.outputs.page_url }}
+        steps:
+            - name: Deploy to GitHub Pages
+              id: deployment
+              uses: actions/deploy-pages@v5

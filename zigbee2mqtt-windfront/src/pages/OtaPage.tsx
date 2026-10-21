@@ -1,0 +1,534 @@
+import { faServer, faStop } from "@fortawesome/free-solid-svg-icons";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import type { ColumnDef, RowSelectionState } from "@tanstack/react-table";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { Link } from "react-router";
+import Button from "../components/Button.js";
+import ConfirmButton from "../components/ConfirmButton.js";
+import DeviceImage from "../components/device/DeviceImage.js";
+import IndeterminateCheckbox from "../components/ota-page/IndeterminateCheckbox.js";
+import { formatOtaFileVersion, type OnAbortClickPayload } from "../components/ota-page/index.js";
+import OtaControlGroup, { type OtaControlGroupProps } from "../components/ota-page/OtaControlGroup.js";
+import OtaFileVersion from "../components/ota-page/OtaFileVersion.js";
+import OtaUpdateButton from "../components/ota-page/OtaUpdateButton.js";
+import SourceDot from "../components/SourceDot.js";
+import Table from "../components/table/Table.js";
+import TableSearch from "../components/table/TableSearch.js";
+import DefinitionLink from "../components/value-decorators/DefinitionLink.js";
+import Duration from "../components/value-decorators/Duration.js";
+import OtaLink from "../components/value-decorators/OtaLink.js";
+import PowerSource from "../components/value-decorators/PowerSource.js";
+import VendorLink from "../components/value-decorators/VendorLink.js";
+import { useTable } from "../hooks/useTable.js";
+import en from "../i18n/locales/en.json" with { type: "json" };
+import { NavBarContent } from "../layout/NavBarContext.js";
+import { API_NAMES, API_URLS, type AppState, MULTI_INSTANCE, useAppStore } from "../store.js";
+import type { Device, DeviceState } from "../types.js";
+import { toHex } from "../utils.js";
+import { sendMessage } from "../websocket/WebSocketManager.js";
+
+type OtaTableData = {
+    sourceIdx: number;
+    device: Device;
+    state: DeviceState["update"];
+    batteryState?: {
+        batteryPercent?: number | null;
+        batteryState?: string | null;
+        batteryLow?: boolean | null;
+    };
+    otaSettings: AppState["bridgeInfo"][number]["config"]["ota"];
+};
+
+export default function OtaPage() {
+    const devices = useAppStore((state) => state.devices);
+    const deviceStates = useAppStore((state) => state.deviceStates);
+    const bridgeInfo = useAppStore((state) => state.bridgeInfo);
+    const { t } = useTranslation(["ota", "zigbee", "common"]);
+    const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+
+    // biome-ignore lint/correctness/useExhaustiveDependencies: specific trigger
+    useEffect(() => {
+        setRowSelection({});
+    }, [devices]);
+
+    const otaDevices = useMemo(() => {
+        const filteredDevices: OtaTableData[] = [];
+
+        for (let sourceIdx = 0; sourceIdx < API_URLS.length; sourceIdx++) {
+            const otaSettings = bridgeInfo[sourceIdx].config.ota;
+
+            for (const device of devices[sourceIdx]) {
+                if (device.definition?.supports_ota && !device.disabled) {
+                    const state = deviceStates[sourceIdx][device.friendly_name] ?? {};
+
+                    filteredDevices.push({
+                        sourceIdx,
+                        device,
+                        state: state.update,
+                        batteryState:
+                            device.power_source === "Battery"
+                                ? {
+                                      batteryPercent: state.battery as number,
+                                      batteryState: state.battery_state as string,
+                                      batteryLow: state.battery_low as boolean,
+                                  }
+                                : undefined,
+                        otaSettings,
+                    });
+                }
+            }
+        }
+
+        return filteredDevices;
+    }, [deviceStates, devices, bridgeInfo]);
+
+    const rowSelectionCount = useMemo(() => Object.keys(rowSelection).length, [rowSelection]);
+
+    // biome-ignore lint/correctness/useExhaustiveDependencies: can't dep table
+    const actOnFilteredSelected = useCallback(
+        async (
+            topic:
+                | "bridge/request/device/ota_update/check"
+                | "bridge/request/device/ota_update/update"
+                | "bridge/request/device/ota_update/schedule"
+                | "bridge/request/device/ota_update/unschedule",
+        ) => {
+            const promises: Promise<void>[] = [];
+
+            for (const row of table.getFilteredRowModel().rows) {
+                if (row.getIsSelected()) {
+                    const { sourceIdx, device } = row.original;
+
+                    promises.push(sendMessage(sourceIdx, topic, { id: device.ieee_address }));
+                }
+            }
+
+            setRowSelection({});
+
+            if (promises.length > 0) {
+                await Promise.allSettled(promises);
+            }
+        },
+        [],
+    );
+
+    const onCheckClick: OtaControlGroupProps["onCheckClick"] = useCallback(
+        async ({ sourceIdx, ieee, downgrade, ...rest }) =>
+            await sendMessage(sourceIdx, downgrade ? "bridge/request/device/ota_update/check/downgrade" : "bridge/request/device/ota_update/check", {
+                id: ieee,
+                ...rest,
+            }),
+        [],
+    );
+
+    const onUpdateClick: OtaControlGroupProps["onUpdateClick"] = useCallback(
+        async ({ sourceIdx, ieee, downgrade, ...rest }) =>
+            await sendMessage(
+                sourceIdx,
+                downgrade ? "bridge/request/device/ota_update/update/downgrade" : "bridge/request/device/ota_update/update",
+                {
+                    id: ieee,
+                    ...rest,
+                },
+            ),
+        [],
+    );
+
+    const onScheduleClick: OtaControlGroupProps["onScheduleClick"] = useCallback(
+        async ({ sourceIdx, ieee, downgrade, ...rest }) =>
+            await sendMessage(
+                sourceIdx,
+                downgrade ? "bridge/request/device/ota_update/schedule/downgrade" : "bridge/request/device/ota_update/schedule",
+                { id: ieee, ...rest },
+            ),
+        [],
+    );
+
+    const onUnscheduleClick: OtaControlGroupProps["onUnscheduleClick"] = useCallback(
+        async ({ sourceIdx, ieee }) => await sendMessage(sourceIdx, "bridge/request/device/ota_update/unschedule", { id: ieee }),
+        [],
+    );
+
+    const onAbortClick: (payload: OnAbortClickPayload) => void = useCallback(
+        async ({ sourceIdx, ieee }) => await sendMessage(sourceIdx, "bridge/request/device/ota_update/update/abort", { id: ieee }),
+        [],
+    );
+
+    const columns = useMemo<ColumnDef<OtaTableData, unknown>[]>(
+        () => [
+            {
+                id: "select",
+                size: 45,
+                header: ({ table }) => (
+                    <IndeterminateCheckbox
+                        checked={table.getIsAllRowsSelected()}
+                        indeterminate={table.getIsSomeRowsSelected()}
+                        onChange={table.getToggleAllRowsSelectedHandler()}
+                    />
+                ),
+                accessorFn: () => "",
+                cell: ({ row }) => (
+                    <input
+                        type="checkbox"
+                        className="checkbox"
+                        checked={row.getIsSelected()}
+                        disabled={!row.getCanSelect()}
+                        onChange={row.getToggleSelectedHandler()}
+                    />
+                ),
+                enableGlobalFilter: false,
+                enableColumnFilter: false,
+                enableSorting: false,
+            },
+            {
+                id: "source",
+                size: 60,
+                header: () => (
+                    <span title={t(($) => $.source, { ns: "common" })}>
+                        <FontAwesomeIcon icon={faServer} />
+                    </span>
+                ),
+                accessorFn: ({ sourceIdx }) => API_NAMES[sourceIdx],
+                cell: ({
+                    row: {
+                        original: { sourceIdx },
+                    },
+                }) => <SourceDot idx={sourceIdx} nameClassName="hidden md:inline-block" />,
+                filterFn: "equals",
+                meta: {
+                    filterVariant: "select",
+                    showFacetedOccurrences: true,
+                },
+            },
+            {
+                id: "friendly_name",
+                size: 250,
+                minSize: 175,
+                header: t(($) => $.friendly_name, { ns: "common" }),
+                accessorFn: ({ device }) => `${device.friendly_name} ${device.description ?? ""} ${device.ieee_address}`,
+                cell: ({
+                    row: {
+                        original: { sourceIdx, device, state, batteryState },
+                    },
+                }) => (
+                    <div className="flex items-center gap-3">
+                        <div className="avatar">
+                            <div className="h-11 w-11" style={{ overflow: "visible" }}>
+                                <DeviceImage device={device} otaState={state?.state} disabled={false} />
+                            </div>
+                        </div>
+                        {/* min-w-0 serves to properly truncate content */}
+                        <div className="grow flex flex-col min-w-0">
+                            <Link to={`/device/${sourceIdx}/${device.ieee_address}/info`} className="link link-hover truncate">
+                                {device.friendly_name}
+                            </Link>
+                            {device.description && (
+                                <div className="max-w-3xs text-xs opacity-50 truncate" title={device.description}>
+                                    {device.description}
+                                </div>
+                            )}
+                            <div className="flex flex-row gap-1 mt-0.5 items-center">
+                                {batteryState && (
+                                    <span className="badge badge-sm badge-soft cursor-default">
+                                        <PowerSource device={device} {...batteryState} showLevel />
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                ),
+                sortingFn: (rowA, rowB) => rowA.original.device.friendly_name.localeCompare(rowB.original.device.friendly_name),
+                filterFn: "includesString",
+                meta: {
+                    filterVariant: "text",
+                    textFaceted: true,
+                },
+            },
+            {
+                id: "ieee_address",
+                minSize: 175,
+                header: t(($) => $.ieee_address, { ns: "zigbee" }),
+                accessorFn: ({ device }) => `${device.ieee_address} ${toHex(device.network_address, 4)} ${device.network_address}`,
+                cell: ({
+                    row: {
+                        original: { sourceIdx, device },
+                    },
+                }) => (
+                    <>
+                        <div>
+                            <Link to={`/device/${sourceIdx}/${device.ieee_address}/info`} className="link link-hover font-mono">
+                                {device.ieee_address}
+                            </Link>
+                        </div>
+                        <div className="flex flex-row gap-1">
+                            <span
+                                className="badge badge-ghost badge-sm cursor-default font-mono"
+                                title={t(($) => $.network_address_hex, { ns: "zigbee" })}
+                            >
+                                {toHex(device.network_address, 4)}
+                            </span>
+                            <span
+                                className="badge badge-ghost badge-sm cursor-default font-mono"
+                                title={t(($) => $.network_address_dec, { ns: "zigbee" })}
+                            >
+                                {device.network_address}
+                            </span>
+                        </div>
+                    </>
+                ),
+                sortingFn: (rowA, rowB) => rowA.original.device.ieee_address.localeCompare(rowB.original.device.ieee_address),
+                filterFn: "includesString",
+                meta: {
+                    filterVariant: "text",
+                },
+            },
+            {
+                id: "model",
+                minSize: 175,
+                header: t(($) => $.model, { ns: "zigbee" }),
+                accessorFn: ({ device }) =>
+                    `${device.definition?.model ?? ""} ${device.model_id ?? ""} ${device.definition?.vendor ?? device.manufacturer ?? ""}`,
+                cell: ({
+                    row: {
+                        original: { device },
+                    },
+                }) => (
+                    <>
+                        <DefinitionLink supported={device.supported} definitionModel={device.definition?.model} />
+                        <div>
+                            <span className="badge badge-sm badge-ghost tooltip tooltip-bottom" data-tip={t(($) => $.manufacturer, { ns: "zigbee" })}>
+                                <VendorLink supported={device.supported} definitionVendor={device.definition?.vendor} />
+                            </span>
+                        </div>
+                    </>
+                ),
+                filterFn: "includesString",
+                meta: {
+                    filterVariant: "text",
+                    textFaceted: true,
+                    showFacetedOccurrences: true,
+                },
+            },
+            {
+                id: "firmware_id",
+                minSize: 175,
+                header: t(($) => $.firmware_id, { ns: "zigbee" }),
+                accessorFn: ({ device }) => `${device.software_build_id ?? ""} ${device.date_code ?? ""}`,
+                cell: ({
+                    row: {
+                        original: { device },
+                    },
+                }) => (
+                    <>
+                        <OtaLink device={device} />
+                        {device.date_code && (
+                            <div>
+                                <span
+                                    className="badge badge-sm badge-ghost tooltip tooltip-bottom"
+                                    data-tip={t(($) => $.firmware_build_date, { ns: "zigbee" })}
+                                >
+                                    <span className="font-mono">{device.date_code}</span>
+                                </span>
+                            </div>
+                        )}
+                    </>
+                ),
+                filterFn: "includesString",
+                meta: {
+                    filterVariant: "text",
+                },
+            },
+            {
+                id: "firmware_version",
+                minSize: 175,
+                header: t(($) => $.firmware_version),
+                accessorFn: ({ state }) => formatOtaFileVersion(state?.installed_version)?.join(" "),
+                cell: ({
+                    row: {
+                        original: { state },
+                    },
+                }) => <OtaFileVersion version={state?.installed_version} />,
+                filterFn: "includesString",
+                meta: {
+                    filterVariant: "text",
+                },
+            },
+            {
+                id: "latest_firmware_version",
+                minSize: 175,
+                header: t(($) => $.latest_firmware_version),
+                accessorFn: ({ state }) => (state?.state === "idle" ? en.common.up_to_date : formatOtaFileVersion(state?.latest_version)?.join(" ")),
+                cell: ({
+                    row: {
+                        original: { state },
+                    },
+                }) => <OtaFileVersion version={state?.latest_version} state={state?.state} source={state?.latest_source} />,
+                filterFn: "includesString",
+                meta: {
+                    filterVariant: "text",
+                },
+            },
+            {
+                id: "state",
+                header: t(($) => $.state, { ns: "common" }),
+                accessorFn: ({ state }) => (state?.state ? t(($) => $[state.state]) : t(($) => $.unknown, { ns: "zigbee" })),
+                filterFn: "equals",
+                meta: {
+                    filterVariant: "select",
+                },
+            },
+            {
+                id: "actions",
+                header: "",
+                minSize: 165,
+                accessorFn: ({ state }) => state?.state,
+                cell: ({
+                    row: {
+                        original: { sourceIdx, device, state, otaSettings },
+                    },
+                }) =>
+                    state?.state === "updating" ? (
+                        <div className="flex flex-row gap-1">
+                            <div>
+                                <progress className="progress" value={state.progress} max="100" />
+                                {state.remaining && state.remaining > 0 ? (
+                                    <div>
+                                        {t(($) => $.remaining_time)} <Duration durationSec={state.remaining} />
+                                    </div>
+                                ) : null}
+                            </div>
+                            <Button<void>
+                                className="btn btn-sm btn-square btn-outline btn-error tooltip-left"
+                                onClick={() => onAbortClick({ sourceIdx, ieee: device.ieee_address })}
+                                title={t(($) => $.abort)}
+                            >
+                                <FontAwesomeIcon icon={faStop} />
+                            </Button>
+                        </div>
+                    ) : (
+                        <div className="join join-horizontal">
+                            <OtaControlGroup
+                                sourceIdx={sourceIdx}
+                                device={device}
+                                state={state}
+                                otaSettings={otaSettings}
+                                onCheckClick={onCheckClick}
+                                onUpdateClick={onUpdateClick}
+                                onScheduleClick={onScheduleClick}
+                                onUnscheduleClick={onUnscheduleClick}
+                            />
+                            {state?.state === "available" ? (
+                                <OtaUpdateButton
+                                    sourceIdx={sourceIdx}
+                                    device={device}
+                                    state={state}
+                                    otaSettings={otaSettings}
+                                    onUpdateClick={onUpdateClick}
+                                    onScheduleClick={onScheduleClick}
+                                />
+                            ) : null}
+                        </div>
+                    ),
+                enableSorting: false,
+                enableColumnFilter: false,
+                enableGlobalFilter: false,
+            },
+        ],
+        [onCheckClick, onUpdateClick, onScheduleClick, onUnscheduleClick, onAbortClick, t],
+    );
+
+    const { table, resetFilters, globalFilter, columnFilters } = useTable({
+        id: "ota-devices",
+        columns,
+        data: otaDevices,
+        visibleColumns: { source: MULTI_INSTANCE, state: false },
+        sorting: [{ id: "friendly_name", desc: false }],
+        rowSelection,
+        onRowSelectionChange: setRowSelection,
+    });
+
+    // Automatically prune selection when filters or state/data change
+    // biome-ignore lint/correctness/useExhaustiveDependencies: specific trigger
+    useEffect(() => {
+        const validIds = new Set<string>();
+
+        for (const row of table.getFilteredRowModel().rows) {
+            validIds.add(row.id);
+        }
+
+        let changed = false;
+        const next: RowSelectionState = {};
+
+        for (const id in rowSelection) {
+            if (validIds.has(id)) {
+                next[id] = true;
+            } else {
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            setRowSelection(next);
+        }
+    }, [table, rowSelection, otaDevices, globalFilter, columnFilters]);
+
+    return (
+        <>
+            <NavBarContent>
+                <TableSearch table={table} resetFilters={resetFilters} globalFilter={globalFilter} columnFilters={columnFilters} />
+            </NavBarContent>
+
+            <div className="mb-5">
+                <div className="flex flex-row flex-wrap gap-2 px-2 pb-3">
+                    <ConfirmButton<"bridge/request/device/ota_update/check">
+                        className="btn btn-outline btn-error btn-sm"
+                        item="bridge/request/device/ota_update/check"
+                        onClick={actOnFilteredSelected}
+                        title={t(($) => $.check_selected)}
+                        modalDescription={t(($) => $.dialog_confirmation_prompt, { ns: "common" })}
+                        modalCancelLabel={t(($) => $.cancel, { ns: "common" })}
+                        disabled={rowSelectionCount === 0}
+                    >
+                        {`${t(($) => $.check_selected)} (${rowSelectionCount})`}
+                    </ConfirmButton>
+                    <ConfirmButton<"bridge/request/device/ota_update/update">
+                        className="btn btn-outline btn-error btn-sm"
+                        item="bridge/request/device/ota_update/update"
+                        onClick={actOnFilteredSelected}
+                        title={t(($) => $.update_selected)}
+                        modalDescription={t(($) => $.update_selected_info)}
+                        modalCancelLabel={t(($) => $.cancel, { ns: "common" })}
+                        disabled={rowSelectionCount === 0}
+                    >
+                        {`${t(($) => $.update_selected)} (${rowSelectionCount})`}
+                    </ConfirmButton>
+                    <ConfirmButton<"bridge/request/device/ota_update/schedule">
+                        className="btn btn-outline btn-error btn-sm"
+                        item="bridge/request/device/ota_update/schedule"
+                        onClick={actOnFilteredSelected}
+                        title={t(($) => $.schedule_selected)}
+                        modalDescription={t(($) => $.dialog_confirmation_prompt, { ns: "common" })}
+                        modalCancelLabel={t(($) => $.cancel, { ns: "common" })}
+                        disabled={rowSelectionCount === 0}
+                    >
+                        {`${t(($) => $.schedule_selected)} (${rowSelectionCount})`}
+                    </ConfirmButton>
+                    <ConfirmButton<"bridge/request/device/ota_update/unschedule">
+                        className="btn btn-outline btn-error btn-sm"
+                        item="bridge/request/device/ota_update/unschedule"
+                        onClick={actOnFilteredSelected}
+                        title={t(($) => $.unschedule_selected)}
+                        modalDescription={t(($) => $.dialog_confirmation_prompt, { ns: "common" })}
+                        modalCancelLabel={t(($) => $.cancel, { ns: "common" })}
+                        disabled={rowSelectionCount === 0}
+                    >
+                        {`${t(($) => $.unschedule_selected)} (${rowSelectionCount})`}
+                    </ConfirmButton>
+                </div>
+
+                <Table id="ota-devices" table={table} resetFilters={resetFilters} globalFilter={globalFilter} columnFilters={columnFilters} />
+            </div>
+        </>
+    );
+}

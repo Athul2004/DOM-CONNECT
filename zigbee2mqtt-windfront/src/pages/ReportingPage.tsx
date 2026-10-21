@@ -1,0 +1,549 @@
+import NiceModal from "@ebay/nice-modal-react";
+import { faArrowRotateLeft, faArrowsRotate, faBan, faPenToSquare, faServer, faStopwatch } from "@fortawesome/free-solid-svg-icons";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import type { ColumnDef, RowSelectionState } from "@tanstack/react-table";
+import { type JSX, useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { Link } from "react-router";
+import type { Zigbee2MQTTAPI } from "zigbee2mqtt";
+import Button from "../components/Button.js";
+import ConfirmButton from "../components/ConfirmButton.js";
+import DeviceImage from "../components/device/DeviceImage.js";
+import ReportingRow from "../components/device-page/ReportingRow.js";
+import SelectField from "../components/form-fields/SelectField.js";
+import { ReportingBatchEditModal } from "../components/modal/components/ReportingBatchEditModal.js";
+import { ReportingRuleModal } from "../components/modal/components/ReportingRuleModal.js";
+import IndeterminateCheckbox from "../components/ota-page/IndeterminateCheckbox.js";
+import DevicePicker from "../components/pickers/DevicePicker.js";
+import EndpointPicker from "../components/pickers/EndpointPicker.js";
+import { getClusterAttribute } from "../components/pickers/index.js";
+import { makeDefaultReporting, type ReportingRule } from "../components/reporting/index.js";
+import SourceDot from "../components/SourceDot.js";
+import Table from "../components/table/Table.js";
+import TableSearch from "../components/table/TableSearch.js";
+import { useTable } from "../hooks/useTable.js";
+import { NavBarContent } from "../layout/NavBarContext.js";
+import { API_NAMES, API_URLS, type AppState, MULTI_INSTANCE, useAppStore } from "../store.js";
+import type { Device } from "../types.js";
+import { getEndpoints } from "../utils.js";
+import { sendMessage } from "../websocket/WebSocketManager.js";
+import { isAnalogDataType } from "../zspec.js";
+
+export type ReportingTableData = {
+    sourceIdx: number;
+    device: Device;
+    rule: ReportingRule;
+    bridgeDefinitions: AppState["bridgeDefinitions"][number];
+    isAnalogAttribute: boolean;
+};
+
+export default function ReportingPage(): JSX.Element {
+    const allBridgeDefinitions = useAppStore((state) => state.bridgeDefinitions);
+    const devices = useAppStore((state) => state.devices);
+    const { t } = useTranslation(["zigbee", "common"]);
+    const [newRuleSourceIdx, setNewRuleSourceIdx] = useState(0);
+    const [newRuleDevice, setNewRuleDevice] = useState<Device | null>(null);
+    const [newRuleEndpoint, setNewRuleEndpoint] = useState<string>("");
+    const [newRuleDraft, setNewRuleDraft] = useState<ReportingRule | null>(null);
+    const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+
+    // biome-ignore lint/correctness/useExhaustiveDependencies: specific trigger
+    useEffect(() => {
+        setRowSelection({});
+    }, [devices]);
+
+    const data = useMemo<ReportingTableData[]>(() => {
+        const rows: ReportingTableData[] = [];
+
+        for (let sourceIdx = 0; sourceIdx < API_URLS.length; sourceIdx++) {
+            const bridgeDefinitions = allBridgeDefinitions[sourceIdx];
+
+            for (const device of devices[sourceIdx]) {
+                for (const endpointId in device.endpoints) {
+                    const endpoint = device.endpoints[endpointId];
+
+                    for (const reporting of endpoint.configured_reportings) {
+                        const attrDef = getClusterAttribute(bridgeDefinitions, device.ieee_address, reporting.cluster, reporting.attribute);
+                        const isAnalogAttribute = attrDef == null || isAnalogDataType(attrDef);
+
+                        rows.push({
+                            sourceIdx,
+                            device,
+                            rule: { ...reporting, endpoint: endpointId },
+                            bridgeDefinitions,
+                            isAnalogAttribute,
+                        });
+                    }
+                }
+            }
+        }
+
+        return rows;
+    }, [devices, allBridgeDefinitions]);
+
+    const rowSelectionCount = useMemo(() => Object.keys(rowSelection).length, [rowSelection]);
+
+    // biome-ignore lint/correctness/useExhaustiveDependencies: can't dep table
+    const actOnFilteredSelected = useCallback(async ([minRepInterval, maxRepInterval, repChange]: [number, number, number]) => {
+        const promises: Promise<void>[] = [];
+
+        for (const row of table.table.getFilteredRowModel().rows) {
+            if (row.getIsSelected()) {
+                const { sourceIdx, device, rule, bridgeDefinitions } = row.original;
+                const attrDef = getClusterAttribute(bridgeDefinitions, device.ieee_address, rule.cluster, rule.attribute);
+                // default to consider analog if can't find attribute definition
+                const isAnalogAttribute = attrDef == null || isAnalogDataType(attrDef);
+                const payload: Zigbee2MQTTAPI["bridge/request/device/reporting/configure"] = {
+                    id: device.ieee_address,
+                    endpoint: rule.endpoint,
+                    cluster: rule.cluster,
+                    attribute: rule.attribute,
+                    minimum_report_interval: minRepInterval,
+                    maximum_report_interval: maxRepInterval,
+                    option: {}, // TODO: check this
+                };
+
+                if (isAnalogAttribute) {
+                    payload.reportable_change = repChange;
+                }
+
+                promises.push(sendMessage(sourceIdx, "bridge/request/device/reporting/configure", payload));
+            }
+        }
+
+        setRowSelection({});
+
+        if (promises.length > 0) {
+            await Promise.allSettled(promises);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (newRuleDevice && newRuleEndpoint) {
+            setNewRuleDraft(makeDefaultReporting(newRuleDevice.ieee_address, newRuleEndpoint));
+        } else {
+            setNewRuleDraft(null);
+        }
+    }, [newRuleDevice, newRuleEndpoint]);
+
+    const availableEndpoints = useMemo(() => getEndpoints(newRuleDevice), [newRuleDevice]);
+
+    const applyRule = useCallback(async (sourceIdx: number, device: Device, rule: ReportingRule, isAnalogAttribute: boolean): Promise<void> => {
+        const { cluster, endpoint, attribute, minimum_report_interval, maximum_report_interval, reportable_change } = rule;
+        const payload: Zigbee2MQTTAPI["bridge/request/device/reporting/configure"] = {
+            id: device.ieee_address,
+            endpoint,
+            cluster,
+            attribute,
+            minimum_report_interval,
+            maximum_report_interval,
+            option: {}, // TODO: check this
+        };
+
+        if (isAnalogAttribute) {
+            payload.reportable_change = reportable_change;
+        }
+
+        await sendMessage(sourceIdx, "bridge/request/device/reporting/configure", payload);
+    }, []);
+
+    const applyNewRule = useCallback(
+        async (rule: ReportingRule): Promise<void> => {
+            if (!newRuleDevice) {
+                return;
+            }
+
+            const attrDef = getClusterAttribute(allBridgeDefinitions[newRuleSourceIdx], newRuleDevice.ieee_address, rule.cluster, rule.attribute);
+            // default to consider analog if can't find attribute definition
+            const isAnalogAttribute = attrDef == null || isAnalogDataType(attrDef);
+
+            await applyRule(newRuleSourceIdx, newRuleDevice, rule, isAnalogAttribute);
+            setNewRuleSourceIdx(0);
+            setNewRuleDevice(null);
+            setNewRuleEndpoint("");
+        },
+        [applyRule, newRuleSourceIdx, newRuleDevice, allBridgeDefinitions],
+    );
+
+    const onRowSync = useCallback(async ([sourceIdx, id, endpoint, cluster, attribute]: [number, string, number, string, string]) => {
+        await sendMessage(sourceIdx, "bridge/request/device/reporting/read", {
+            id,
+            endpoint,
+            cluster,
+            configs: [{ attribute }],
+        });
+    }, []);
+
+    const columns = useMemo<ColumnDef<ReportingTableData, unknown>[]>(
+        () => [
+            {
+                id: "select",
+                size: 45,
+                header: ({ table }) => (
+                    <IndeterminateCheckbox
+                        checked={table.getIsAllRowsSelected()}
+                        indeterminate={table.getIsSomeRowsSelected()}
+                        onChange={table.getToggleAllRowsSelectedHandler()}
+                    />
+                ),
+                accessorFn: () => "",
+                cell: ({ row }) => (
+                    <input
+                        type="checkbox"
+                        className="checkbox"
+                        checked={row.getIsSelected()}
+                        disabled={!row.getCanSelect()}
+                        onChange={row.getToggleSelectedHandler()}
+                    />
+                ),
+                enableGlobalFilter: false,
+                enableColumnFilter: false,
+                enableSorting: false,
+            },
+            {
+                id: "source",
+                size: 60,
+                header: () => (
+                    <span title={t(($) => $.source, { ns: "common" })}>
+                        <FontAwesomeIcon icon={faServer} />
+                    </span>
+                ),
+                accessorFn: ({ sourceIdx }) => API_NAMES[sourceIdx],
+                cell: ({
+                    row: {
+                        original: { sourceIdx },
+                    },
+                }) => <SourceDot idx={sourceIdx} nameClassName="hidden md:inline-block" />,
+                filterFn: "equals",
+                meta: { filterVariant: "select", showFacetedOccurrences: true },
+            },
+            {
+                id: "friendly_name",
+                size: 250,
+                minSize: 175,
+                header: t(($) => $.friendly_name, { ns: "common" }),
+                accessorFn: ({ device }) => `${device.friendly_name} ${device.ieee_address} ${device.definition?.model ?? ""}`,
+                cell: ({
+                    row: {
+                        original: { sourceIdx, device },
+                    },
+                }) => (
+                    <div className="flex items-center gap-3">
+                        <div className="avatar">
+                            <div className="h-11 w-11" style={{ overflow: "visible" }}>
+                                <DeviceImage device={device} disabled={device.disabled} />
+                            </div>
+                        </div>
+                        {/* min-w-0 serves to properly truncate content */}
+                        <div className="grow flex flex-col min-w-0">
+                            <Link to={`/device/${sourceIdx}/${device.ieee_address}/reporting`} className="link link-hover truncate">
+                                {device.friendly_name}
+                            </Link>
+                            {device.description && (
+                                <div className="max-w-3xs text-xs opacity-50 truncate" title={device.description}>
+                                    {device.description}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                ),
+                sortingFn: (rowA, rowB) => rowA.original.device.friendly_name.localeCompare(rowB.original.device.friendly_name),
+                filterFn: "includesString",
+                meta: { filterVariant: "text", textFaceted: true },
+            },
+            {
+                id: "endpoint",
+                size: 85,
+                header: t(($) => $.endpoint),
+                accessorFn: ({ rule }) => rule.endpoint,
+                filterFn: "equals",
+                meta: { filterVariant: "text" },
+            },
+            {
+                id: "cluster",
+                minSize: 150,
+                header: t(($) => $.cluster),
+                accessorFn: ({ rule }) => rule.cluster,
+                cell: ({
+                    row: {
+                        original: { rule },
+                    },
+                }) => (
+                    <div className="min-w-0" title={`${rule.cluster}`}>
+                        <div className="truncate">{rule.cluster}</div>
+                    </div>
+                ),
+                filterFn: "includesString",
+                meta: { filterVariant: "text", textFaceted: true },
+            },
+            {
+                id: "attribute",
+                minSize: 150,
+                header: t(($) => $.attribute),
+                accessorFn: ({ rule }) => rule.attribute,
+                cell: ({
+                    row: {
+                        original: { rule },
+                    },
+                }) => (
+                    <div className="min-w-0" title={`${rule.attribute}`}>
+                        <div className="truncate">{rule.attribute}</div>
+                    </div>
+                ),
+                filterFn: "includesString",
+                meta: { filterVariant: "text", textFaceted: true },
+            },
+            {
+                id: "min_rep_interval",
+                size: 120,
+                header: t(($) => $.min_rep_interval),
+                accessorFn: ({ rule }) => rule.minimum_report_interval,
+                filterFn: "inNumberRange",
+                meta: { filterVariant: "range" },
+            },
+            {
+                id: "max_rep_interval",
+                size: 120,
+                header: t(($) => $.max_rep_interval),
+                accessorFn: ({ rule }) => rule.maximum_report_interval,
+                filterFn: "inNumberRange",
+                meta: { filterVariant: "range" },
+            },
+            {
+                id: "min_rep_change",
+                size: 120,
+                header: t(($) => $.min_rep_change),
+                accessorFn: ({ rule, isAnalogAttribute }) => (isAnalogAttribute ? rule.reportable_change : "N/A"),
+                filterFn: "inNumberRange",
+                meta: { filterVariant: "range" },
+            },
+            {
+                id: "actions",
+                size: 150,
+                cell: ({
+                    row: {
+                        original: { sourceIdx, device, rule, bridgeDefinitions, isAnalogAttribute },
+                    },
+                }) => (
+                    <div className="join join-horizontal">
+                        <Button<void>
+                            className="btn btn-sm btn-square btn-outline btn-primary join-item"
+                            title={t(($) => $.edit, { ns: "common" })}
+                            onClick={async () =>
+                                await NiceModal.show(ReportingRuleModal, {
+                                    sourceIdx,
+                                    device,
+                                    rule,
+                                    bridgeDefinitions,
+                                    isAnalogAttribute,
+                                    onApply: applyRule,
+                                })
+                            }
+                        >
+                            <FontAwesomeIcon icon={faPenToSquare} />
+                        </Button>
+                        <ConfirmButton
+                            className="btn btn-sm btn-square btn-outline btn-accent join-item"
+                            item={[sourceIdx, device.ieee_address, rule.endpoint, rule.cluster, rule.attribute]}
+                            onClick={onRowSync}
+                            title={t(($) => $.sync, { ns: "common" })}
+                            modalDescription={t(($) => $.dialog_confirmation_prompt, { ns: "common" })}
+                            modalCancelLabel={t(($) => $.cancel, { ns: "common" })}
+                        >
+                            <FontAwesomeIcon icon={faArrowsRotate} />
+                        </ConfirmButton>
+                        <ConfirmButton<void>
+                            title={t(($) => $.reset, { ns: "common" })}
+                            className="btn btn-sm btn-square btn-warning btn-outline join-item"
+                            onClick={async () =>
+                                // revert to device's default reporting
+                                await applyRule(
+                                    sourceIdx,
+                                    device,
+                                    { ...rule, minimum_report_interval: 0xffff, maximum_report_interval: 0x0000, reportable_change: 0 },
+                                    isAnalogAttribute,
+                                )
+                            }
+                            modalDescription={t(($) => $.dialog_confirmation_prompt, { ns: "common" })}
+                            modalCancelLabel={t(($) => $.cancel, { ns: "common" })}
+                        >
+                            <FontAwesomeIcon icon={faArrowRotateLeft} />
+                        </ConfirmButton>
+                        <ConfirmButton<void>
+                            title={t(($) => $.disable_periodic, { ns: "common" })}
+                            className="btn btn-sm btn-square btn-error btn-outline join-item"
+                            onClick={async () =>
+                                // disable periodic reporting
+                                await applyRule(
+                                    sourceIdx,
+                                    device,
+                                    { ...rule, minimum_report_interval: 0x0000, maximum_report_interval: 0x0000 },
+                                    isAnalogAttribute,
+                                )
+                            }
+                            modalDescription={t(($) => $.dialog_confirmation_prompt, { ns: "common" })}
+                            modalCancelLabel={t(($) => $.cancel, { ns: "common" })}
+                        >
+                            <FontAwesomeIcon icon={faStopwatch} />
+                        </ConfirmButton>
+                        <ConfirmButton<void>
+                            title={t(($) => $.terminate, { ns: "common" })}
+                            className="btn btn-sm btn-square btn-error btn-outline join-item"
+                            onClick={async () =>
+                                // terminate reporting
+                                await applyRule(
+                                    sourceIdx,
+                                    device,
+                                    { ...rule, minimum_report_interval: 0x0000, maximum_report_interval: 0xffff, reportable_change: 0 },
+                                    isAnalogAttribute,
+                                )
+                            }
+                            modalDescription={t(($) => $.dialog_confirmation_prompt, { ns: "common" })}
+                            modalCancelLabel={t(($) => $.cancel, { ns: "common" })}
+                        >
+                            <FontAwesomeIcon icon={faBan} />
+                        </ConfirmButton>
+                    </div>
+                ),
+                enableSorting: false,
+                enableColumnFilter: false,
+                enableGlobalFilter: false,
+            },
+        ],
+        [applyRule, onRowSync, t],
+    );
+
+    const table = useTable({
+        id: "all-reportings",
+        columns,
+        data,
+        visibleColumns: { source: MULTI_INSTANCE },
+        sorting: [
+            { id: "friendly_name", desc: false },
+            { id: "endpoint", desc: false },
+        ],
+        rowSelection,
+        onRowSelectionChange: setRowSelection,
+    });
+
+    return (
+        <>
+            <NavBarContent>
+                <TableSearch {...table} />
+            </NavBarContent>
+
+            <div className="flex flex-row flex-wrap justify-center gap-2 mb-2">
+                {MULTI_INSTANCE ? (
+                    <SelectField
+                        name="source"
+                        label={t(($) => $.source, { ns: "common" })}
+                        value={newRuleSourceIdx}
+                        onChange={(e) => {
+                            if (!e.target.validationMessage) {
+                                setNewRuleSourceIdx(Number.parseInt(e.target.value, 10));
+                                setNewRuleDevice(null);
+                                setNewRuleEndpoint("");
+                            }
+                        }}
+                        className="select"
+                    >
+                        {API_NAMES.map((name, idx) => (
+                            // biome-ignore lint/suspicious/noArrayIndexKey: not alone
+                            <option key={`${idx}-${name}`} value={idx}>
+                                {name}
+                            </option>
+                        ))}
+                    </SelectField>
+                ) : null}
+                <DevicePicker
+                    label={t(($) => $.device, { ns: "zigbee" })}
+                    devices={devices[newRuleSourceIdx] ?? []}
+                    value={newRuleDevice?.ieee_address ?? ""}
+                    onChange={(entity) => {
+                        if (entity && "ieee_address" in entity) {
+                            setNewRuleDevice(entity);
+                            setNewRuleEndpoint("");
+                        } else {
+                            setNewRuleDevice(null);
+                        }
+                    }}
+                    disabled={(devices[newRuleSourceIdx] ?? []).length === 0}
+                />
+                <EndpointPicker
+                    label={t(($) => $.source_endpoint, { ns: "common" })}
+                    values={availableEndpoints}
+                    value={newRuleEndpoint}
+                    disabled={!newRuleDevice}
+                    onChange={(endpoint) => setNewRuleEndpoint(String(endpoint))}
+                />
+                {newRuleDevice && newRuleDraft ? (
+                    <ReportingRow
+                        sourceIdx={newRuleSourceIdx}
+                        rule={newRuleDraft}
+                        bridgeDefinitions={allBridgeDefinitions[newRuleSourceIdx]}
+                        device={newRuleDevice}
+                        onApply={applyNewRule}
+                        showDivider={false}
+                    />
+                ) : null}
+            </div>
+
+            <div className="mb-5">
+                <div className="flex flex-row flex-wrap gap-2 px-2 pb-3">
+                    <Button<void>
+                        className="btn btn-outline btn-error btn-sm"
+                        title={t(($) => $.edit_selected, { ns: "common" })}
+                        onClick={async () =>
+                            await NiceModal.show(ReportingBatchEditModal, {
+                                onApply: actOnFilteredSelected,
+                            })
+                        }
+                        disabled={rowSelectionCount === 0}
+                    >
+                        {`${t(($) => $.edit_selected, { ns: "common" })} (${rowSelectionCount})`}
+                    </Button>
+                    <ConfirmButton
+                        // revert to device's default reporting
+                        item={[0xffff, 0x0000, 0]}
+                        className="btn btn-outline btn-error btn-sm"
+                        onClick={actOnFilteredSelected}
+                        title={t(($) => $.reset_selected, { ns: "common" })}
+                        disabled={rowSelectionCount === 0}
+                        modalDescription={t(($) => $.dialog_confirmation_prompt, { ns: "common" })}
+                        modalCancelLabel={t(($) => $.cancel, { ns: "common" })}
+                    >
+                        {`${t(($) => $.reset_selected, { ns: "common" })} (${rowSelectionCount})`}
+                    </ConfirmButton>
+                    <ConfirmButton
+                        // disable periodic reporting
+                        item={[0x0000, 0x0000, 0]}
+                        className="btn btn-outline btn-error btn-sm"
+                        onClick={actOnFilteredSelected}
+                        title={t(($) => $.disable_selected_periodic, { ns: "common" })}
+                        disabled={rowSelectionCount === 0}
+                        modalDescription={t(($) => $.dialog_confirmation_prompt, { ns: "common" })}
+                        modalCancelLabel={t(($) => $.cancel, { ns: "common" })}
+                    >
+                        {`${t(($) => $.disable_selected_periodic, { ns: "common" })} (${rowSelectionCount})`}
+                    </ConfirmButton>
+                    <ConfirmButton
+                        // terminate reporting
+                        item={[0x0000, 0xffff, 0]}
+                        className="btn btn-outline btn-error btn-sm"
+                        onClick={actOnFilteredSelected}
+                        title={t(($) => $.terminate_selected, { ns: "common" })}
+                        disabled={rowSelectionCount === 0}
+                        modalDescription={t(($) => $.dialog_confirmation_prompt, { ns: "common" })}
+                        modalCancelLabel={t(($) => $.cancel, { ns: "common" })}
+                    >
+                        {`${t(($) => $.terminate_selected, { ns: "common" })} (${rowSelectionCount})`}
+                    </ConfirmButton>
+                </div>
+            </div>
+
+            <div className="mb-5">
+                <Table id="all-reportings" {...table} />
+            </div>
+        </>
+    );
+}

@@ -1,0 +1,722 @@
+import {describe, expect, it} from "vitest";
+import * as Zcl from "../../../src/zspec/zcl";
+import {ZCL_TYPE_INVALID_BY_TYPE} from "../../../src/zspec/zcl/definition/datatypes";
+import type {Attribute, CustomClusters, Parameter} from "../../../src/zspec/zcl/definition/tstype";
+
+const CUSTOM_CLUSTERS: CustomClusters = {
+    genBasic: {
+        name: "genBasic",
+        ID: Zcl.Clusters.genBasic.ID,
+        commands: {},
+        commandsResponse: {},
+        attributes: {myCustomAttr: {name: "myCustomAttr", ID: 65533, type: Zcl.DataType.UINT8}},
+    },
+    myCustomCluster: {
+        name: "myCustomCluster",
+        ID: 65534,
+        commands: {},
+        commandsResponse: {},
+        attributes: {myCustomAttr: {name: "myCustomAttr", ID: 65533, type: Zcl.DataType.UINT8}},
+    },
+    myCustomClusterManuf: {
+        name: "myCustomClusterManuf",
+        ID: 65533,
+        manufacturerCode: 65534,
+        commands: {},
+        commandsResponse: {},
+        attributes: {myCustomAttr: {name: "myCustomAttr", ID: 65533, type: Zcl.DataType.UINT8}},
+    },
+    myCustomWithManufAttr: {
+        name: "haDiagnostic",
+        ID: 0x0b05,
+        manufacturerCode: Zcl.ManufacturerCode.DANFOSS_A_S,
+        commands: {},
+        commandsResponse: {},
+        attributes: {
+            danfossSystemStatusCode: {
+                name: "danfossSystemStatusCode",
+                ID: 65530,
+                type: Zcl.DataType.UINT8,
+                manufacturerCode: Zcl.ManufacturerCode.DANFOSS_A_S,
+            },
+        },
+    },
+};
+
+describe("ZCL Utils", () => {
+    it("Creates status error", () => {
+        const zclError = new Zcl.StatusError(Zcl.Status.ABORT);
+
+        expect(zclError).toBeInstanceOf(Zcl.StatusError);
+        expect(zclError.code).toStrictEqual(Zcl.Status.ABORT);
+        expect(zclError.message).toStrictEqual(`Status '${Zcl.Status[Zcl.Status.ABORT]}'`);
+    });
+
+    it("Checks analog data type", () => {
+        expect(Zcl.Utils.isAnalogDataType(Zcl.DataType.UINT16)).toStrictEqual(true);
+        expect(Zcl.Utils.isAnalogDataType(Zcl.DataType.DATA16)).toStrictEqual(false);
+        expect(Zcl.Utils.isAnalogDataType(Zcl.DataType.NO_DATA)).toStrictEqual(false);
+    });
+
+    it.each([
+        [
+            "by ID",
+            {key: Zcl.Clusters.genBasic.ID, manufacturerCode: undefined, customClusters: {}},
+            {cluster: Zcl.Clusters.genBasic, name: "genBasic"},
+        ],
+        ["by name", {key: "genAlarms", manufacturerCode: undefined, customClusters: {}}, {cluster: Zcl.Clusters.genAlarms, name: "genAlarms"}],
+        [
+            "by ID with no manufacturer code",
+            {key: Zcl.Clusters.genAlarms.ID, manufacturerCode: 123, customClusters: {}},
+            {cluster: Zcl.Clusters.genAlarms, name: "genAlarms"},
+        ],
+        [
+            "by ID with non-matching manufacturer code",
+            {key: Zcl.Clusters.manuSpecificAmazonWWAH.ID, manufacturerCode: 123, customClusters: {}},
+            {cluster: Zcl.Clusters.manuSpecificAmazonWWAH, name: "manuSpecificAmazonWWAH"},
+        ],
+        [
+            "by ID with matching manufacturer code",
+            {
+                key: Zcl.Clusters.manuSpecificAmazonWWAH.ID,
+                manufacturerCode: Zcl.Clusters.manuSpecificAmazonWWAH.manufacturerCode!,
+                customClusters: {},
+            },
+            {cluster: Zcl.Clusters.manuSpecificAmazonWWAH, name: "manuSpecificAmazonWWAH"},
+        ],
+        [
+            "custom by ID",
+            {key: CUSTOM_CLUSTERS.myCustomCluster.ID, manufacturerCode: undefined, customClusters: CUSTOM_CLUSTERS},
+            {cluster: CUSTOM_CLUSTERS.myCustomCluster, name: "myCustomCluster"},
+        ],
+        [
+            "custom by name",
+            {key: "myCustomCluster", manufacturerCode: undefined, customClusters: CUSTOM_CLUSTERS},
+            {cluster: CUSTOM_CLUSTERS.myCustomCluster, name: "myCustomCluster"},
+        ],
+        [
+            "custom by ID with no manufacturer code",
+            {key: CUSTOM_CLUSTERS.myCustomCluster.ID, manufacturerCode: 123, customClusters: CUSTOM_CLUSTERS},
+            {cluster: CUSTOM_CLUSTERS.myCustomCluster, name: "myCustomCluster"},
+        ],
+        [
+            "custom by ID with non-matching manufacturer code",
+            {key: CUSTOM_CLUSTERS.myCustomClusterManuf.ID, manufacturerCode: 123, customClusters: CUSTOM_CLUSTERS},
+            {cluster: CUSTOM_CLUSTERS.myCustomClusterManuf, name: "myCustomClusterManuf"},
+        ],
+        [
+            "custom by ID with matching manufacturer code",
+            {
+                key: CUSTOM_CLUSTERS.myCustomClusterManuf.ID,
+                manufacturerCode: CUSTOM_CLUSTERS.myCustomClusterManuf.manufacturerCode!,
+                customClusters: CUSTOM_CLUSTERS,
+            },
+            {cluster: CUSTOM_CLUSTERS.myCustomClusterManuf, name: "myCustomClusterManuf"},
+        ],
+        [
+            "custom by ID overriding same Zcl ID entirely",
+            {key: CUSTOM_CLUSTERS.genBasic.ID, manufacturerCode: undefined, customClusters: CUSTOM_CLUSTERS},
+            {cluster: CUSTOM_CLUSTERS.genBasic, name: "genBasic"},
+        ],
+    ])("Gets cluster %s", (_name, payload, expected) => {
+        const cluster = Zcl.Utils.getCluster(payload.key, payload.manufacturerCode, payload.customClusters);
+
+        expect(cluster.ID).toStrictEqual(expected.cluster.ID);
+        expect(cluster.name).toStrictEqual(expected.name);
+
+        for (const k in expected.cluster.attributes) {
+            expect(cluster.attributes[k]).toBeDefined();
+            expect(cluster.attributes[k].name).toStrictEqual(k);
+        }
+
+        expect(cluster.manufacturerCode).toStrictEqual(expected.cluster.manufacturerCode);
+    });
+
+    it("Creates empty cluster when getting by invalid ID", () => {
+        const cluster = Zcl.Utils.getCluster(99999, undefined, {});
+        expect(cluster.ID).toStrictEqual(99999);
+        expect(cluster.name).toStrictEqual("99999");
+        expect(cluster.manufacturerCode).toStrictEqual(undefined);
+        expect(cluster.attributes).toStrictEqual({});
+        expect(cluster.commands).toStrictEqual({});
+        expect(cluster.commandsResponse).toStrictEqual({});
+    });
+
+    it("Throws when getting invalid cluster name", () => {
+        expect(() => {
+            Zcl.Utils.getCluster("invalid", undefined, {});
+        }).toThrow();
+    });
+
+    it.each([
+        [
+            "by ID",
+            {key: Zcl.Clusters.genBasic.attributes.zclVersion.ID, manufacturerCode: undefined, customClusters: {}},
+            {cluster: Zcl.Clusters.genBasic, name: "zclVersion"},
+        ],
+        ["by name", {key: "alarmCount", manufacturerCode: undefined, customClusters: {}}, {cluster: Zcl.Clusters.genAlarms, name: "alarmCount"}],
+        [
+            "by ID with no manufacturer code",
+            {key: Zcl.Clusters.genAlarms.attributes.alarmCount.ID, manufacturerCode: 123, customClusters: {}},
+            {cluster: Zcl.Clusters.genAlarms, name: "alarmCount"},
+        ],
+        [
+            "by ID with matching manufacturer code",
+            {
+                key: CUSTOM_CLUSTERS.myCustomWithManufAttr.attributes.danfossSystemStatusCode.ID,
+                manufacturerCode: Zcl.ManufacturerCode.DANFOSS_A_S,
+                customClusters: CUSTOM_CLUSTERS,
+            },
+            {cluster: Zcl.Clusters.haDiagnostic, name: "danfossSystemStatusCode"},
+        ],
+        [
+            "custom by ID",
+            {key: CUSTOM_CLUSTERS.genBasic.attributes.myCustomAttr.ID, manufacturerCode: undefined, customClusters: CUSTOM_CLUSTERS},
+            {cluster: Zcl.Clusters.genBasic, name: "myCustomAttr"},
+        ],
+        [
+            "custom by name",
+            {key: "myCustomAttr", manufacturerCode: undefined, customClusters: CUSTOM_CLUSTERS},
+            {cluster: Zcl.Clusters.genBasic, name: "myCustomAttr"},
+        ],
+    ])("Gets and checks cluster attribute %s", (_name, payload, expected) => {
+        const cluster = Zcl.Utils.getCluster(expected.cluster.ID, payload.manufacturerCode, payload.customClusters);
+        const attribute = Zcl.Utils.getClusterAttribute(cluster, payload.key, payload.manufacturerCode);
+        expect(attribute).not.toBeUndefined();
+        expect(attribute).toStrictEqual(cluster.attributes[expected.name]);
+    });
+
+    it("Returns undefined when getting invalid attribute", () => {
+        const cluster = Zcl.Utils.getCluster(Zcl.Clusters.genAlarms.ID, undefined, {});
+        expect(Zcl.Utils.getClusterAttribute(cluster, "abcd", undefined)).toBeUndefined();
+        expect(Zcl.Utils.getClusterAttribute(cluster, 99999, undefined)).toBeUndefined();
+    });
+
+    it("Returns undefined when getting attribute with invalid manufacturer code", () => {
+        const cluster = Zcl.Utils.getCluster(Zcl.Clusters.haDiagnostic.ID, 123, CUSTOM_CLUSTERS);
+        expect(
+            Zcl.Utils.getClusterAttribute(cluster, CUSTOM_CLUSTERS.myCustomWithManufAttr.attributes.danfossSystemStatusCode.ID, 123),
+        ).toBeUndefined();
+    });
+
+    it.each([
+        ["by ID", {key: Zcl.Clusters.genBasic.commands.resetFactDefault.ID}, {cluster: Zcl.Clusters.genBasic, name: "resetFactDefault"}],
+        ["by name", {key: "resetAll"}, {cluster: Zcl.Clusters.genAlarms, name: "resetAll"}],
+    ])("Gets cluster command %s", (_name, payload, expected) => {
+        const cluster = Zcl.Utils.getCluster(expected.cluster.ID, undefined, {});
+        const command = Zcl.Utils.getClusterCommand(cluster, payload.key);
+        expect(command).toStrictEqual(cluster.commands[expected.name]);
+    });
+
+    it("Throws when getting invalid command", () => {
+        const cluster = Zcl.Utils.getCluster(Zcl.Clusters.genAlarms.ID, undefined, {});
+        expect(() => {
+            Zcl.Utils.getClusterCommand(cluster, "abcd");
+        }).toThrow();
+        expect(() => {
+            Zcl.Utils.getClusterCommand(cluster, 99999);
+        }).toThrow();
+    });
+
+    it.each([
+        [
+            "by ID",
+            {key: Zcl.Clusters.genIdentify.commandsResponse.identifyQueryRsp.ID},
+            {cluster: Zcl.Clusters.genIdentify, name: "identifyQueryRsp"},
+        ],
+        ["by name", {key: "getRsp"}, {cluster: Zcl.Clusters.genAlarms, name: "getRsp"}],
+    ])("Gets cluster command response %s", (_name, payload, expected) => {
+        const cluster = Zcl.Utils.getCluster(expected.cluster.ID, undefined, {});
+        const commandResponse = Zcl.Utils.getClusterCommandResponse(cluster, payload.key);
+        expect(commandResponse).toStrictEqual(cluster.commandsResponse[expected.name]);
+    });
+
+    it("Throws when getting invalid command response", () => {
+        const cluster = Zcl.Utils.getCluster(Zcl.Clusters.genAlarms.ID, undefined, {});
+        expect(() => {
+            Zcl.Utils.getClusterCommandResponse(cluster, "abcd");
+        }).toThrow();
+        expect(() => {
+            Zcl.Utils.getClusterCommandResponse(cluster, 99999);
+        }).toThrow();
+    });
+
+    it.each([
+        ["by ID", {key: Zcl.Foundation.writeUndiv.ID}, {cluster: Zcl.Foundation.writeUndiv, name: "writeUndiv"}],
+        ["by name", {key: "read"}, {cluster: Zcl.Foundation.read, name: "read"}],
+    ])("Gets global command %s", (_name, payload, expected) => {
+        expect(Zcl.Utils.getGlobalCommand(payload.key)).toMatchObject(
+            "response" in expected.cluster
+                ? {
+                      ID: expected.cluster.ID,
+                      name: expected.name,
+                      response: expected.cluster.response,
+                      parse: expect.any(Function),
+                      write: expect.any(Function),
+                  }
+                : {
+                      ID: expected.cluster.ID,
+                      name: expected.name,
+                      parse: expect.any(Function),
+                      write: expect.any(Function),
+                  },
+        );
+    });
+
+    it("Throws when getting invalid global command", () => {
+        expect(() => {
+            Zcl.Utils.getGlobalCommand(99999);
+        }).toThrow();
+        expect(() => {
+            Zcl.Utils.getGlobalCommand("abcd");
+        }).toThrow();
+    });
+
+    it("Checks cluster name", () => {
+        expect(Zcl.Utils.isClusterName("genBasic")).toBeTruthy();
+        expect(Zcl.Utils.isClusterName("genAlarms")).toBeTruthy();
+        expect(Zcl.Utils.isClusterName("invalid")).toBeFalsy();
+    });
+
+    it("Gets Foundation command", () => {
+        expect(Zcl.Utils.getFoundationCommand(0)).toStrictEqual(Zcl.Foundation.read);
+        expect(Zcl.Utils.getFoundationCommandByName("read")).toStrictEqual(Zcl.Foundation.read);
+    });
+
+    it("Throws when getting invalid Foundation command ID", () => {
+        expect(() => {
+            Zcl.Utils.getFoundationCommand(9999);
+        }).toThrow(`Status 'UNSUP_COMMAND' foundation:9999`);
+        expect(() => {
+            Zcl.Utils.getFoundationCommandByName("doesnotexist");
+        }).toThrow(`Status 'UNSUP_COMMAND' foundation:doesnotexist`);
+    });
+
+    function createAttribute(overrides: Partial<Attribute> = {}): Attribute {
+        // Provide a minimal, structurally valid Attribute (add fields here if the real type requires more)
+        const base: Attribute = {
+            ID: 0x0001,
+            name: "testAttr",
+            type: Zcl.DataType.UINT8,
+            // Optional fields spread afterwards
+            ...overrides,
+        };
+        return base;
+    }
+
+    function createParameter(overrides: Partial<Parameter> = {}): Parameter {
+        const base: Parameter = {
+            name: "testParam",
+            type: Zcl.DataType.UINT8,
+            ...overrides,
+        };
+        return base;
+    }
+
+    describe("processAttributeWrite specific", () => {
+        it("throws when attribute not writable", () => {
+            const attr = createAttribute();
+            expect(() => Zcl.Utils.processAttributeWrite(attr, 1)).toThrow(/not writable/i);
+        });
+
+        it("returns default when value is null and default exists", () => {
+            const attr = createAttribute({write: true, default: 42});
+            expect(Zcl.Utils.processAttributeWrite(attr, null)).toStrictEqual(42);
+        });
+
+        it("NaN with default returns default", () => {
+            const attr = createAttribute({write: true, default: 7});
+            expect(Zcl.Utils.processAttributeWrite(attr, Number.NaN)).toStrictEqual(7);
+        });
+
+        it("NaN without default returns non-value sentinel", () => {
+            const type = Zcl.DataType.UINT8;
+            const sentinel = ZCL_TYPE_INVALID_BY_TYPE[type];
+            expect(sentinel).not.toBeUndefined();
+            const attr = createAttribute({write: true, type});
+            expect(Zcl.Utils.processAttributeWrite(attr, Number.NaN)).toStrictEqual(sentinel);
+        });
+
+        it("throws when trying to write non-value on unsupported datatype", () => {
+            const type = Zcl.DataType.DATA8;
+            const sentinel = ZCL_TYPE_INVALID_BY_TYPE[type];
+            expect(sentinel).toBeUndefined();
+            const attr = createAttribute({write: true, type});
+            expect(() => Zcl.Utils.processAttributeWrite(attr, Number.NaN)).toThrow(/does not have a default nor a non-value/i);
+        });
+
+        it("level control for lighting attributes currentLevel and options", () => {
+            const cluster = Zcl.Utils.getCluster("genLevelCtrl");
+            let result = Zcl.Utils.processAttributeWrite(Zcl.Utils.getClusterAttribute(cluster, "options", undefined)!, 0x00);
+            expect(result).toStrictEqual(0x00);
+            result = Zcl.Utils.processAttributeWrite(Zcl.Utils.getClusterAttribute(cluster, "options", undefined)!, 0xff);
+            expect(result).toStrictEqual(0xff);
+            expect(() => Zcl.Utils.processAttributeWrite(Zcl.Utils.getClusterAttribute(cluster, "currentLevel", undefined)!, 0x01)).toThrow(
+                /not writable/i,
+            );
+        });
+
+        it("lighting control ctrl attributes startUpColorTemperature", () => {
+            const cluster = Zcl.Utils.getCluster("lightingColorCtrl");
+            let result = Zcl.Utils.processAttributeWrite(Zcl.Utils.getClusterAttribute(cluster, "startUpColorTemperature", undefined)!, 0xfeff);
+            expect(result).toStrictEqual(0xfeff);
+            result = Zcl.Utils.processAttributeWrite(Zcl.Utils.getClusterAttribute(cluster, "startUpColorTemperature", undefined)!, 0xffff);
+            expect(result).toStrictEqual(0xffff);
+            expect(() =>
+                Zcl.Utils.processAttributeWrite(Zcl.Utils.getClusterAttribute(cluster, "startUpColorTemperature", undefined)!, 0xff00),
+            ).toThrow(/requires max/i);
+        });
+
+        it("rssi location attributes coordinate1 and pathLossExponent", () => {
+            const cluster = Zcl.Utils.getCluster("genRssiLocation");
+            let result = Zcl.Utils.processAttributeWrite(Zcl.Utils.getClusterAttribute(cluster, "coordinate1", undefined)!, -0x8000);
+            expect(result).toStrictEqual(-0x8000);
+            result = Zcl.Utils.processAttributeWrite(Zcl.Utils.getClusterAttribute(cluster, "coordinate1", undefined)!, 0x7fff);
+            expect(result).toStrictEqual(0x7fff);
+            result = Zcl.Utils.processAttributeWrite(Zcl.Utils.getClusterAttribute(cluster, "coordinate1", undefined)!, 0x0012);
+            expect(result).toStrictEqual(0x0012);
+            result = Zcl.Utils.processAttributeWrite(Zcl.Utils.getClusterAttribute(cluster, "pathLossExponent", undefined)!, 0xff);
+            expect(result).toStrictEqual(0xff);
+            result = Zcl.Utils.processAttributeWrite(Zcl.Utils.getClusterAttribute(cluster, "pathLossExponent", undefined)!, Number.NaN);
+            expect(result).toStrictEqual(0xffff);
+        });
+    });
+
+    describe("processAttributePreRead specific", () => {
+        it("throws when attribute not writable", () => {
+            const attr = createAttribute({read: false});
+            expect(() => Zcl.Utils.processAttributePreRead(attr)).toThrow(/not readable/i);
+        });
+    });
+
+    describe("processAttributePostRead specific", () => {
+        it("maps invalid sentinel to NaN", () => {
+            const type = Zcl.DataType.UINT16;
+            const sentinel = ZCL_TYPE_INVALID_BY_TYPE[type];
+            expect(sentinel).not.toBeUndefined();
+            const attr = createAttribute({write: true, type});
+            const result = Zcl.Utils.processAttributePostRead(attr, sentinel);
+            expect(Number.isNaN(result)).toStrictEqual(true);
+        });
+
+        it("maps invalid sentinel to NaN with different min", () => {
+            const type = Zcl.DataType.INT16;
+            const sentinel = ZCL_TYPE_INVALID_BY_TYPE[type];
+            expect(sentinel).not.toBeUndefined();
+            const attr = createAttribute({write: true, type, min: (sentinel as number) + 1});
+            const result = Zcl.Utils.processAttributePostRead(attr, sentinel);
+            expect(Number.isNaN(result)).toStrictEqual(true);
+        });
+
+        it("returns invalid sentinel unchanged if same as min (ignore invalid sentinel)", () => {
+            const type = Zcl.DataType.INT16;
+            const sentinel = ZCL_TYPE_INVALID_BY_TYPE[type];
+            expect(sentinel).not.toBeUndefined();
+            const attr = createAttribute({write: true, type, min: sentinel as number});
+            const result = Zcl.Utils.processAttributePostRead(attr, sentinel);
+            expect(result).toStrictEqual(sentinel);
+        });
+
+        it("maps invalid sentinel to NaN with different max", () => {
+            const type = Zcl.DataType.UINT16;
+            const sentinel = ZCL_TYPE_INVALID_BY_TYPE[type];
+            expect(sentinel).not.toBeUndefined();
+            const attr = createAttribute({write: true, type, max: (sentinel as number) - 1});
+            const result = Zcl.Utils.processAttributePostRead(attr, sentinel);
+            expect(Number.isNaN(result)).toStrictEqual(true);
+        });
+
+        it("returns invalid sentinel unchanged if same as max (ignore invalid sentinel)", () => {
+            const type = Zcl.DataType.UINT16;
+            const sentinel = ZCL_TYPE_INVALID_BY_TYPE[type];
+            expect(sentinel).not.toBeUndefined();
+            const attr = createAttribute({write: true, type, max: sentinel as number});
+            const result = Zcl.Utils.processAttributePostRead(attr, sentinel);
+            expect(result).toStrictEqual(sentinel);
+        });
+
+        it("basic attributes zclVersion and powerSource", () => {
+            const cluster = Zcl.Utils.getCluster("genBasic");
+            // max: 0xff
+            let result = Zcl.Utils.processAttributePostRead(Zcl.Utils.getClusterAttribute(cluster, "zclVersion", undefined)!, 0xff);
+            expect(result).toStrictEqual(0xff);
+            // default: 0xff
+            result = Zcl.Utils.processAttributePostRead(Zcl.Utils.getClusterAttribute(cluster, "powerSource", undefined)!, 0xff);
+            expect(result).toStrictEqual(0xff);
+            result = Zcl.Utils.processAttributePostRead(Zcl.Utils.getClusterAttribute(cluster, "zclVersion", undefined)!, 0x02);
+            expect(result).toStrictEqual(0x02);
+            result = Zcl.Utils.processAttributePostRead(Zcl.Utils.getClusterAttribute(cluster, "powerSource", undefined)!, 0x03);
+            expect(result).toStrictEqual(0x03);
+        });
+
+        it("device temperature config attribute currentTemperature", () => {
+            const cluster = Zcl.Utils.getCluster("genDeviceTempCfg");
+            let result = Zcl.Utils.processAttributePostRead(Zcl.Utils.getClusterAttribute(cluster, "currentTemperature", undefined)!, -32768);
+            expect(Number.isNaN(result)).toStrictEqual(true);
+            result = Zcl.Utils.processAttributePostRead(Zcl.Utils.getClusterAttribute(cluster, "currentTemperature", undefined)!, 200);
+            expect(result).toStrictEqual(200);
+            result = Zcl.Utils.processAttributePostRead(Zcl.Utils.getClusterAttribute(cluster, "currentTemperature", undefined)!, -200);
+            expect(result).toStrictEqual(-200);
+            expect(() => Zcl.Utils.processAttributePostRead(Zcl.Utils.getClusterAttribute(cluster, "currentTemperature", undefined)!, 201)).toThrow(
+                /requires max/i,
+            );
+        });
+
+        it("level control for lighting attributes currentLevel and options", () => {
+            const cluster = Zcl.Utils.getCluster("genLevelCtrl");
+            let result = Zcl.Utils.processAttributePostRead(Zcl.Utils.getClusterAttribute(cluster, "currentLevel", undefined)!, 0xff);
+            expect(Number.isNaN(result)).toStrictEqual(false); // technically should be true for genLevelCtrlForLighting but handling left to ZHC
+            result = Zcl.Utils.processAttributePostRead(Zcl.Utils.getClusterAttribute(cluster, "currentLevel", undefined)!, 0xfe);
+            expect(result).toStrictEqual(0xfe);
+            result = Zcl.Utils.processAttributePostRead(Zcl.Utils.getClusterAttribute(cluster, "currentLevel", undefined)!, 200);
+            expect(result).toStrictEqual(200);
+            result = Zcl.Utils.processAttributePostRead(Zcl.Utils.getClusterAttribute(cluster, "options", undefined)!, 0x00);
+            expect(result).toStrictEqual(0x00);
+            result = Zcl.Utils.processAttributePostRead(Zcl.Utils.getClusterAttribute(cluster, "options", undefined)!, 0xff);
+            expect(result).toStrictEqual(0xff);
+        });
+
+        it("lighting control ctrl attributes startUpColorTemperature", () => {
+            const cluster = Zcl.Utils.getCluster("lightingColorCtrl");
+            let result = Zcl.Utils.processAttributePostRead(Zcl.Utils.getClusterAttribute(cluster, "startUpColorTemperature", undefined)!, 0xfeff);
+            expect(result).toStrictEqual(0xfeff);
+            result = Zcl.Utils.processAttributePostRead(Zcl.Utils.getClusterAttribute(cluster, "startUpColorTemperature", undefined)!, 0xffff);
+            expect(result).toStrictEqual(0xffff);
+            expect(() =>
+                Zcl.Utils.processAttributePostRead(Zcl.Utils.getClusterAttribute(cluster, "startUpColorTemperature", undefined)!, 0xff00),
+            ).toThrow(/requires max/i);
+        });
+
+        it("scenes attributes lastCfgBy", () => {
+            const cluster = Zcl.Utils.getCluster("genScenes");
+            const result = Zcl.Utils.processAttributePostRead(Zcl.Utils.getClusterAttribute(cluster, "lastCfgBy", undefined)!, "0xffffffffffffffff");
+            expect(result).toStrictEqual("0xffffffffffffffff");
+        });
+    });
+
+    describe("processParameterWrite specific", () => {
+        it("throws when trying to write non-value on unsupported datatype", () => {
+            const type = Zcl.DataType.DATA8;
+            const sentinel = ZCL_TYPE_INVALID_BY_TYPE[type];
+            expect(sentinel).toBeUndefined();
+            const param = createParameter({type});
+            expect(() => Zcl.Utils.processParameterWrite(param, Number.NaN)).toThrow(/does not have a non-value/i);
+        });
+
+        it("rssi location cmd setAbsolute parameters coordinate1 and pathLossExponent", () => {
+            const cluster = Zcl.Utils.getCluster("genRssiLocation");
+            const cmd = Zcl.Utils.getClusterCommand(cluster, "setAbsolute")!;
+            const paramCoordinate1 = cmd.parameters.find((p) => p.name === "coordinate1")!;
+            const paramPathLossExponent = cmd.parameters.find((p) => p.name === "pathLossExponent")!;
+            let result = Zcl.Utils.processParameterWrite(paramCoordinate1, -0x8000);
+            expect(result).toStrictEqual(-0x8000);
+            result = Zcl.Utils.processParameterWrite(paramCoordinate1, 0x7fff);
+            expect(result).toStrictEqual(0x7fff);
+            result = Zcl.Utils.processParameterWrite(paramCoordinate1, 0x0012);
+            expect(result).toStrictEqual(0x0012);
+            result = Zcl.Utils.processParameterWrite(paramPathLossExponent, 0xff);
+            expect(result).toStrictEqual(0xff);
+            result = Zcl.Utils.processParameterWrite(paramPathLossExponent, Number.NaN);
+            expect(result).toStrictEqual(0xffff);
+        });
+
+        it("scenes cmd rsp getSceneMembershipRsp parameter capacity", () => {
+            const cluster = Zcl.Utils.getCluster("genScenes");
+            const cmd = Zcl.Utils.getClusterCommandResponse(cluster, "getSceneMembershipRsp")!;
+            const paramCapacity = cmd.parameters.find((p) => p.name === "capacity")!;
+            let result = Zcl.Utils.processParameterWrite(paramCapacity, 0xfe);
+            expect(result).toStrictEqual(0xfe);
+            result = Zcl.Utils.processParameterWrite(paramCapacity, 0xff);
+            expect(result).toStrictEqual(0xff);
+        });
+    });
+
+    describe("processParameterRead specific", () => {
+        it("maps invalid sentinel to NaN", () => {
+            const type = Zcl.DataType.UINT16;
+            const sentinel = ZCL_TYPE_INVALID_BY_TYPE[type];
+            expect(sentinel).not.toBeUndefined();
+            const attr = createParameter({type});
+            const result = Zcl.Utils.processParameterRead(attr, sentinel);
+            expect(Number.isNaN(result)).toStrictEqual(true);
+        });
+
+        it("maps invalid sentinel to NaN with different min", () => {
+            const type = Zcl.DataType.INT16;
+            const sentinel = ZCL_TYPE_INVALID_BY_TYPE[type];
+            expect(sentinel).not.toBeUndefined();
+            const attr = createParameter({type, min: (sentinel as number) + 1});
+            const result = Zcl.Utils.processParameterRead(attr, sentinel);
+            expect(Number.isNaN(result)).toStrictEqual(true);
+        });
+
+        it("returns invalid sentinel unchanged if same as min (skips invalid sentinel)", () => {
+            const type = Zcl.DataType.INT16;
+            const sentinel = ZCL_TYPE_INVALID_BY_TYPE[type];
+            expect(sentinel).not.toBeUndefined();
+            const attr = createParameter({type, min: sentinel as number});
+            const result = Zcl.Utils.processParameterRead(attr, sentinel);
+            expect(result).toStrictEqual(sentinel);
+        });
+
+        it("maps invalid sentinel to NaN with different max", () => {
+            const type = Zcl.DataType.UINT16;
+            const sentinel = ZCL_TYPE_INVALID_BY_TYPE[type];
+            expect(sentinel).not.toBeUndefined();
+            const attr = createParameter({type, max: (sentinel as number) - 1});
+            const result = Zcl.Utils.processParameterRead(attr, sentinel);
+            expect(Number.isNaN(result)).toStrictEqual(true);
+        });
+
+        it("returns invalid sentinel unchanged if same as max (skips invalid sentinel)", () => {
+            const type = Zcl.DataType.UINT16;
+            const sentinel = ZCL_TYPE_INVALID_BY_TYPE[type];
+            expect(sentinel).not.toBeUndefined();
+            const attr = createParameter({type, max: sentinel as number});
+            const result = Zcl.Utils.processParameterRead(attr, sentinel);
+            expect(result).toStrictEqual(sentinel);
+        });
+
+        it("rssi location cmd rsp locationDataNotification parameters coordinate1 and pathLossExponent", () => {
+            const cluster = Zcl.Utils.getCluster("genRssiLocation");
+            const cmd = Zcl.Utils.getClusterCommandResponse(cluster, "locationDataNotification")!;
+            const paramCoordinate1 = cmd.parameters.find((p) => p.name === "coordinate1")!;
+            const paramPathLossExponent = cmd.parameters.find((p) => p.name === "pathLossExponent")!;
+            let result = Zcl.Utils.processParameterRead(paramCoordinate1, -0x8000);
+            expect(Number.isNaN(result)).toStrictEqual(true);
+            result = Zcl.Utils.processParameterRead(paramCoordinate1, 0x7fff);
+            expect(result).toStrictEqual(0x7fff);
+            result = Zcl.Utils.processParameterRead(paramCoordinate1, 0x0012);
+            expect(result).toStrictEqual(0x0012);
+            result = Zcl.Utils.processParameterRead(paramPathLossExponent, 0xff);
+            expect(result).toStrictEqual(0xff);
+            result = Zcl.Utils.processParameterRead(paramPathLossExponent, 0xffff);
+            expect(Number.isNaN(result)).toStrictEqual(true);
+        });
+
+        it("scenes cmd rsp getSceneMembershipRsp parameter capacity", () => {
+            const cluster = Zcl.Utils.getCluster("genScenes");
+            const cmd = Zcl.Utils.getClusterCommandResponse(cluster, "getSceneMembershipRsp")!;
+            const paramCapacity = cmd.parameters.find((p) => p.name === "capacity")!;
+            let result = Zcl.Utils.processParameterRead(paramCapacity, 0xfe);
+            expect(result).toStrictEqual(0xfe);
+            result = Zcl.Utils.processParameterRead(paramCapacity, 0xff);
+            expect(result).toStrictEqual(0xff);
+        });
+    });
+
+    describe.each([
+        ["write", Zcl.Utils.processAttributeWrite],
+        ["post read", Zcl.Utils.processAttributePostRead],
+    ])("process attribute for %s", (_name, fn) => {
+        it("returns null when value is null and no default", () => {
+            const attr = createAttribute({write: true});
+            expect(fn(attr, null)).toBeNull();
+        });
+
+        it("returns value unchanged when it equals default (skips restrictions)", () => {
+            const attr = createAttribute({write: true, default: 50, min: 60});
+            expect(fn(attr, 50)).toStrictEqual(50);
+        });
+
+        it("throws below min", () => {
+            const attr = createAttribute({write: true, min: 10});
+            expect(() => fn(attr, 5)).toThrow(/requires min/i);
+        });
+
+        it("throws below minExcl", () => {
+            const attr = createAttribute({write: true, minExcl: 10});
+            expect(() => fn(attr, 5)).toThrow(/requires min exclusive/i);
+        });
+
+        it("throws at minExcl", () => {
+            const attr = createAttribute({write: true, minExcl: 10});
+            expect(() => fn(attr, 10)).toThrow(/requires min exclusive/i);
+        });
+
+        it("throws above max", () => {
+            const attr = createAttribute({write: true, max: 20});
+            expect(() => fn(attr, 30)).toThrow(/requires max/i);
+        });
+
+        it("throws above maxExcl", () => {
+            const attr = createAttribute({write: true, maxExcl: 20});
+            expect(() => fn(attr, 30)).toThrow(/requires max exclusive/i);
+        });
+
+        it("throws at maxExcl", () => {
+            const attr = createAttribute({write: true, maxExcl: 20});
+            expect(() => fn(attr, 20)).toThrow(/requires max exclusive/i);
+        });
+
+        it("throws not length", () => {
+            const attr = createAttribute({write: true, length: 10});
+            expect(() => fn(attr, "abcde")).toThrow(/requires length/i);
+        });
+
+        it("throws below minLen", () => {
+            const attr = createAttribute({write: true, minLen: 10});
+            expect(() => fn(attr, "abcde")).toThrow(/requires min length/i);
+        });
+
+        it("throws above maxLen", () => {
+            const attr = createAttribute({write: true, maxLen: 2});
+            expect(() => fn(attr, "xyz")).toThrow(/requires max length/i);
+        });
+    });
+
+    describe.each([
+        ["write", Zcl.Utils.processParameterWrite],
+        ["read", Zcl.Utils.processParameterRead],
+    ])("process parameter for %s", (_name, fn) => {
+        it("returns value when null", () => {
+            const p = createParameter();
+            expect(fn(p, null)).toBeNull();
+        });
+
+        it("throws below min", () => {
+            const attr = createParameter({min: 10});
+            expect(() => fn(attr, 5)).toThrow(/requires min/i);
+        });
+
+        it("throws below minExcl", () => {
+            const attr = createParameter({minExcl: 10});
+            expect(() => fn(attr, 5)).toThrow(/requires min exclusive/i);
+        });
+
+        it("throws at minExcl", () => {
+            const attr = createParameter({minExcl: 10});
+            expect(() => fn(attr, 10)).toThrow(/requires min exclusive/i);
+        });
+
+        it("throws above max", () => {
+            const attr = createParameter({max: 20});
+            expect(() => fn(attr, 30)).toThrow(/requires max/i);
+        });
+
+        it("throws above maxExcl", () => {
+            const attr = createParameter({maxExcl: 20});
+            expect(() => fn(attr, 30)).toThrow(/requires max exclusive/i);
+        });
+
+        it("throws at maxExcl", () => {
+            const attr = createParameter({maxExcl: 20});
+            expect(() => fn(attr, 20)).toThrow(/requires max exclusive/i);
+        });
+
+        it("throws not length", () => {
+            const attr = createParameter({length: 10});
+            expect(() => fn(attr, "abcde")).toThrow(/requires length/i);
+        });
+
+        it("throws below minLen", () => {
+            const attr = createParameter({minLen: 10});
+            expect(() => fn(attr, "abcde")).toThrow(/requires min length/i);
+        });
+
+        it("throws above maxLen", () => {
+            const attr = createParameter({maxLen: 2});
+            expect(() => fn(attr, "xyz")).toThrow(/requires max length/i);
+        });
+    });
+});

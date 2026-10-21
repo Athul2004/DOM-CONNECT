@@ -1,0 +1,191 @@
+import {
+    faArrowsSpin,
+    faBug,
+    faCog,
+    faCogs,
+    faDownLong,
+    faFileDownload,
+    faInfo,
+    faLink,
+    faObjectGroup,
+    faReceipt,
+    faWandMagic,
+    faWandSparkles,
+} from "@fortawesome/free-solid-svg-icons";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { type JSX, lazy, useEffect } from "react";
+import { useTranslation } from "react-i18next";
+import { NavLink, type NavLinkRenderProps, useNavigate, useParams } from "react-router";
+import { useShallow } from "zustand/react/shallow";
+import HeaderDeviceSelector from "../components/device-page/HeaderDeviceSelector.js";
+import { NavBarContent } from "../layout/NavBarContext.js";
+import { useAppStore } from "../store.js";
+import type { Device } from "../types.js";
+import { getValidSourceIdx } from "../utils.js";
+
+export type TabName =
+    | "info"
+    | "bind"
+    | "state"
+    | "exposes"
+    | "clusters"
+    | "reporting"
+    | "settings"
+    | "settings-specific"
+    | "dev-console"
+    | "groups"
+    | "scene"
+    | "docs";
+
+type DevicePageUrlParams = {
+    sourceIdx: `${number}`;
+    deviceId: string;
+    tab?: TabName;
+};
+
+const BindTab = lazy(async () => await import("../components/device-page/tabs/Bind.js"));
+const ClustersTab = lazy(async () => await import("../components/device-page/tabs/Clusters.js"));
+const DevConsoleTab = lazy(async () => await import("../components/device-page/tabs/DevConsole.js"));
+const DeviceInfoTab = lazy(async () => await import("../components/device-page/tabs/DeviceInfo.js"));
+const DeviceSettingsTab = lazy(async () => await import("../components/device-page/tabs/DeviceSettings.js"));
+const DeviceSpecificSettingsTab = lazy(async () => await import("../components/device-page/tabs/DeviceSpecificSettings.js"));
+const DocsTab = lazy(async () => await import("../components/device-page/tabs/Docs.js"));
+const ExposesTab = lazy(async () => await import("../components/device-page/tabs/Exposes.js"));
+const GroupsTab = lazy(async () => await import("../components/device-page/tabs/Groups.js"));
+const ReportingTab = lazy(async () => await import("../components/device-page/tabs/Reporting.js"));
+const SceneTab = lazy(async () => await import("../components/device-page/tabs/Scene.js"));
+const StateTab = lazy(async () => await import("../components/device-page/tabs/State.js"));
+
+function renderTab(sourceIdx: number, tab: TabName, device: Device) {
+    const key = `${sourceIdx}-${device.ieee_address}`;
+
+    switch (tab) {
+        case "info":
+            return <DeviceInfoTab key={key} sourceIdx={sourceIdx} device={device} />;
+        case "exposes":
+            return <ExposesTab key={key} sourceIdx={sourceIdx} device={device} />;
+        case "bind":
+            return <BindTab key={key} sourceIdx={sourceIdx} device={device} />;
+        case "reporting":
+            return <ReportingTab key={key} sourceIdx={sourceIdx} device={device} />;
+        case "settings":
+            return <DeviceSettingsTab key={key} sourceIdx={sourceIdx} ieeeAddress={device.ieee_address} />;
+        case "settings-specific":
+            return <DeviceSpecificSettingsTab key={key} sourceIdx={sourceIdx} device={device} />;
+        case "state":
+            return <StateTab key={key} sourceIdx={sourceIdx} friendlyName={device.friendly_name} />;
+        case "clusters":
+            return <ClustersTab key={key} device={device} />;
+        case "groups":
+            return <GroupsTab key={key} sourceIdx={sourceIdx} device={device} />;
+        case "scene":
+            return <SceneTab key={key} sourceIdx={sourceIdx} device={device} />;
+        case "dev-console":
+            return <DevConsoleTab key={key} sourceIdx={sourceIdx} device={device} />;
+        case "docs":
+            return device.definition?.model ? <DocsTab key={key} sourceIdx={sourceIdx} definitionModel={device.definition.model} /> : null;
+    }
+}
+
+const isTabActive = ({ isActive }: NavLinkRenderProps) => (isActive ? "tab tab-active flex-shrink-0 whitespace-nowrap" : "tab flex-shrink-0 whitespace-nowrap");
+
+export default function DevicePage(): JSX.Element {
+    const navigate = useNavigate();
+    const { t } = useTranslation(["devicePage", "common"]);
+    const { sourceIdx, deviceId, tab } = useParams<DevicePageUrlParams>();
+    const [numSourceIdx, validSourceIdx] = getValidSourceIdx(sourceIdx);
+    // considered ready once most of essential `bridge/` topics received on first source
+    const ready = useAppStore(useShallow((state) => state.webSocketMetrics[numSourceIdx].messagesBridge >= 5));
+    const device = useAppStore(
+        useShallow((state) => (deviceId ? state.devices[numSourceIdx].find((device) => device.ieee_address === deviceId) : undefined)),
+    );
+
+    useEffect(() => {
+        if (sourceIdx && validSourceIdx && device) {
+            if (device.type === "Coordinator") {
+                void navigate(`/settings/${sourceIdx}/about`, { replace: true });
+            } else if (!tab) {
+                void navigate(`/device/${sourceIdx}/${device.ieee_address}/info`, { replace: true });
+            }
+        } else if (ready) {
+            void navigate("/devices", { replace: true });
+        }
+    }, [sourceIdx, validSourceIdx, tab, device, navigate, ready]);
+
+    if (!ready) {
+        return (
+            <div className="flex flex-row justify-center items-center">
+                <span className="loading loading-infinity loading-xl" />
+            </div>
+        );
+    }
+
+    return (
+        <>
+            <NavBarContent>
+                <HeaderDeviceSelector currentSourceIdx={numSourceIdx} currentDevice={device} tab={tab} />
+            </NavBarContent>
+
+            <div className="tabs tabs-border flex-nowrap overflow-x-auto no-scrollbar max-w-full pb-1">
+                <NavLink to={`/device/${numSourceIdx}/${deviceId}/info`} className={isTabActive}>
+                    <FontAwesomeIcon icon={faInfo} className="me-2" />
+                    {t(($) => $.about)}
+                </NavLink>
+                <NavLink to={`/device/${numSourceIdx}/${deviceId}/exposes`} className={isTabActive}>
+                    <FontAwesomeIcon icon={faWandMagic} className="me-2" />
+                    {t(($) => $.exposes, { ns: "common" })}
+                </NavLink>
+                <NavLink to={`/device/${numSourceIdx}/${deviceId}/bind`} className={isTabActive}>
+                    <FontAwesomeIcon icon={faLink} className="me-2" />
+                    {t(($) => $.bind)}
+                </NavLink>
+                <NavLink to={`/device/${numSourceIdx}/${deviceId}/reporting`} className={isTabActive}>
+                    <FontAwesomeIcon icon={faDownLong} className="me-2" />
+                    {t(($) => $.reporting)}
+                </NavLink>
+                <NavLink to={`/device/${numSourceIdx}/${deviceId}/settings`} className={isTabActive}>
+                    <FontAwesomeIcon icon={faCogs} className="me-2" />
+                    {t(($) => $.settings)}
+                </NavLink>
+                <NavLink to={`/device/${numSourceIdx}/${deviceId}/settings-specific`} className={isTabActive}>
+                    <FontAwesomeIcon icon={faCog} className="me-2" />
+                    {t(($) => $.settings_specific)}
+                </NavLink>
+                <NavLink to={`/device/${numSourceIdx}/${deviceId}/state`} className={isTabActive}>
+                    <FontAwesomeIcon icon={faArrowsSpin} className="me-2" />
+                    {t(($) => $.state)}
+                </NavLink>
+                <NavLink to={`/device/${numSourceIdx}/${deviceId}/clusters`} className={isTabActive}>
+                    <FontAwesomeIcon icon={faReceipt} className="me-2" />
+                    {t(($) => $.clusters)}
+                </NavLink>
+                <NavLink to={`/device/${numSourceIdx}/${deviceId}/groups`} className={isTabActive}>
+                    <FontAwesomeIcon icon={faObjectGroup} className="me-2" />
+                    {t(($) => $.groups)}
+                </NavLink>
+                <NavLink to={`/device/${numSourceIdx}/${deviceId}/scene`} className={isTabActive}>
+                    <FontAwesomeIcon icon={faWandSparkles} className="me-2" />
+                    {t(($) => $.scene)}
+                </NavLink>
+                <NavLink to={`/device/${numSourceIdx}/${deviceId}/dev-console`} className={isTabActive}>
+                    <FontAwesomeIcon icon={faBug} className="me-2" />
+                    {t(($) => $.dev_console)}
+                </NavLink>
+                {device?.supported && device.definition?.source === "native" ? (
+                    <NavLink to={`/device/${numSourceIdx}/${deviceId}/docs`} className={isTabActive}>
+                        <FontAwesomeIcon icon={faFileDownload} className="me-2" />
+                        {t(($) => $.docs)}
+                    </NavLink>
+                ) : null}
+            </div>
+
+            <div className="block h-full bg-base-100 p-3 mt-2 rounded-xl border border-purple-500/20 shadow-lg">
+                {tab && device ? (
+                    renderTab(numSourceIdx, tab, device)
+                ) : (
+                    <div className="flex-auto justify-center items-center">{t(($) => $.unknown_device, { ns: "common" })}</div>
+                )}
+            </div>
+        </>
+    );
+}

@@ -1,0 +1,247 @@
+import events from "node:events";
+
+import type * as Models from "../models";
+import type {BroadcastAddress} from "../zspec/enums";
+import * as Zcl from "../zspec/zcl";
+import type * as Zdo from "../zspec/zdo";
+import type * as ZdoTypes from "../zspec/zdo/definition/tstypes";
+import {discoverAdapter} from "./adapterDiscovery";
+import type * as AdapterEvents from "./events";
+import {AdapterTransport} from "./transport";
+import type * as TsType from "./tstype";
+
+export interface ZclWaitressPayload extends AdapterEvents.ZclPayload {
+    header: NonNullable<AdapterEvents.ZclPayload["header"]>;
+}
+
+export interface ClusterWaitressMatcher {
+    address: number | string | undefined;
+    clusterId: number;
+    endpoint?: number;
+    commandId?: number;
+    defaultRspCommandId?: number;
+    transactionSequenceNumber?: number;
+}
+
+interface AdapterEventMap {
+    deviceJoined: [payload: AdapterEvents.DeviceJoinedPayload];
+    zclPayload: [payload: AdapterEvents.ZclPayload];
+    zdoResponse: [clusterId: Zdo.ClusterId, response: ZdoTypes.GenericZdoResponse];
+    disconnected: [];
+    deviceLeave: [payload: AdapterEvents.DeviceLeavePayload];
+}
+
+export abstract class Adapter extends events.EventEmitter<AdapterEventMap> {
+    public hasZdoMessageOverhead: boolean;
+    public manufacturerID: Zcl.ManufacturerCode;
+    protected networkOptions: TsType.NetworkOptions;
+    protected adapterOptions: TsType.AdapterOptions;
+    protected backupPath: string;
+    readonly transport: AdapterTransport;
+
+    protected constructor(
+        networkOptions: TsType.NetworkOptions,
+        transportOptions: TsType.TransportOptions,
+        backupPath: string,
+        adapterOptions: TsType.AdapterOptions,
+    ) {
+        super();
+        this.hasZdoMessageOverhead = true;
+        this.manufacturerID = Zcl.ManufacturerCode.RESERVED_10;
+        this.networkOptions = networkOptions;
+        this.adapterOptions = adapterOptions;
+        this.backupPath = backupPath;
+        this.transport = new AdapterTransport(transportOptions);
+
+        this.transport.on("close", () => this.emit("disconnected"));
+    }
+
+    /**
+     * Utility
+     */
+
+    public static async create(
+        networkOptions: TsType.NetworkOptions,
+        transportOptions: TsType.TransportOptions,
+        backupPath: string,
+        adapterOptions: TsType.AdapterOptions,
+    ): Promise<Adapter> {
+        const discovered = await discoverAdapter(transportOptions.adapter, transportOptions.path);
+        transportOptions.adapter = discovered.adapter;
+        transportOptions.path = discovered.path;
+
+        if (transportOptions.baudRate === undefined && discovered.baudRate !== undefined) {
+            transportOptions.baudRate = discovered.baudRate;
+        }
+        if (transportOptions.rtscts === undefined && discovered.rtscts !== undefined) {
+            transportOptions.rtscts = discovered.rtscts;
+        }
+
+        switch (discovered.adapter) {
+            case "zstack": {
+                const {ZStackAdapter} = await import("./z-stack/adapter/zStackAdapter.js");
+
+                return new ZStackAdapter(networkOptions, transportOptions, backupPath, adapterOptions);
+            }
+            case "ember": {
+                const {EmberAdapter} = await import("./ember/adapter/emberAdapter.js");
+
+                return new EmberAdapter(networkOptions, transportOptions, backupPath, adapterOptions);
+            }
+            case "deconz": {
+                const {DeconzAdapter} = await import("./deconz/adapter/deconzAdapter.js");
+
+                return new DeconzAdapter(networkOptions, transportOptions, backupPath, adapterOptions);
+            }
+            case "zigate": {
+                const {ZiGateAdapter} = await import("./zigate/adapter/zigateAdapter.js");
+
+                return new ZiGateAdapter(networkOptions, transportOptions, backupPath, adapterOptions);
+            }
+            case "zboss": {
+                const {ZBOSSAdapter} = await import("./zboss/adapter/zbossAdapter.js");
+
+                return new ZBOSSAdapter(networkOptions, transportOptions, backupPath, adapterOptions);
+            }
+            case "zoh": {
+                const {ZoHAdapter} = await import("./zoh/adapter/zohAdapter.js");
+
+                return new ZoHAdapter(networkOptions, transportOptions, backupPath, adapterOptions);
+            }
+            // @deprecated
+            case "ezsp": {
+                const {EZSPAdapter} = await import("./ezsp/adapter/ezspAdapter.js");
+
+                return new EZSPAdapter(networkOptions, transportOptions, backupPath, adapterOptions);
+            }
+            default: {
+                throw new Error(`Adapter '${discovered.adapter}' does not exists, possible options: zstack, ember, deconz, zigate, zboss, zoh, ezsp`);
+            }
+        }
+    }
+
+    static clusterWaitressTimeoutFormatter(matcher: ClusterWaitressMatcher, timeout: number): string {
+        return `Timeout after ${timeout}ms [address=${matcher.address} endpoint=${matcher.endpoint} clusterId=${matcher.clusterId} cmdId=${matcher.commandId} tsn=${matcher.transactionSequenceNumber}]`;
+    }
+
+    static zclWaitressValidator(payload: ZclWaitressPayload, matcher: ClusterWaitressMatcher): boolean {
+        const {header, address, clusterID, endpoint} = payload;
+
+        return (
+            // no sender in Touchlink
+            (matcher.address === undefined || address === matcher.address) &&
+            clusterID === matcher.clusterId &&
+            endpoint === matcher.endpoint &&
+            (matcher.transactionSequenceNumber === undefined || header.transactionSequenceNumber === matcher.transactionSequenceNumber) &&
+            (header.commandIdentifier === matcher.commandId ||
+                // defaultRsp
+                (header.frameControl.frameType === Zcl.FrameType.GLOBAL &&
+                    header.commandIdentifier === 0x0b &&
+                    (matcher.defaultRspCommandId === undefined || payload.data[payload.data.byteLength - 2] === matcher.defaultRspCommandId)))
+        );
+    }
+
+    public abstract start(): Promise<TsType.StartResult>;
+
+    public abstract stop(): Promise<void>;
+
+    public abstract getCoordinatorIEEE(): Promise<string>;
+
+    public abstract getCoordinatorVersion(): Promise<TsType.CoordinatorVersion>;
+
+    public abstract reset(type: "soft" | "hard"): Promise<void>;
+
+    public abstract supportsBackup(): Promise<boolean>;
+
+    public abstract backup(ieeeAddressesInDatabase: string[]): Promise<Models.Backup>;
+
+    public abstract getNetworkParameters(): Promise<TsType.NetworkParameters>;
+
+    public abstract addInstallCode(ieeeAddress: string, key: Buffer, hashed: boolean): Promise<void>;
+
+    public abstract waitFor(
+        networkAddress: number,
+        endpoint: number,
+        frameType: Zcl.FrameType,
+        direction: Zcl.Direction,
+        transactionSequenceNumber: number | undefined,
+        clusterId: number,
+        commandId: number,
+        defaultRspCommandId: number | undefined,
+        timeout: number,
+    ): {promise: Promise<AdapterEvents.ZclPayload>; cancel: () => void};
+
+    /**
+     * ZDO
+     */
+
+    public abstract sendZdo(
+        ieeeAddress: string,
+        networkAddress: number,
+        clusterId: Zdo.ClusterId,
+        payload: Buffer,
+        disableResponse: true,
+    ): Promise<void>;
+    public abstract sendZdo<K extends keyof ZdoTypes.RequestToResponseMap>(
+        ieeeAddress: string,
+        networkAddress: number,
+        clusterId: K,
+        payload: Buffer,
+        disableResponse: false,
+    ): Promise<ZdoTypes.RequestToResponseMap[K]>;
+    public abstract sendZdo<K extends keyof ZdoTypes.RequestToResponseMap>(
+        ieeeAddress: string,
+        networkAddress: number,
+        clusterId: K,
+        payload: Buffer,
+        disableResponse: boolean,
+    ): Promise<ZdoTypes.RequestToResponseMap[K] | undefined>;
+
+    public abstract permitJoin(seconds: number, networkAddress?: number): Promise<void>;
+
+    /**
+     * ZCL
+     */
+
+    public abstract sendZclFrameToEndpoint(
+        ieeeAddr: string,
+        networkAddress: number,
+        endpoint: number,
+        zclFrame: Zcl.Frame,
+        timeout: number,
+        disableResponse: boolean,
+        disableRecovery: boolean,
+        sourceEndpoint?: number,
+        profileId?: number,
+    ): Promise<AdapterEvents.ZclPayload | undefined>;
+
+    public abstract sendZclFrameToGroup(groupID: number, zclFrame: Zcl.Frame, sourceEndpoint?: number, profileId?: number): Promise<void>;
+
+    public abstract sendZclFrameToAll(
+        endpoint: number,
+        zclFrame: Zcl.Frame,
+        sourceEndpoint: number,
+        destination: BroadcastAddress,
+        profileId?: number,
+    ): Promise<void>;
+
+    /**
+     * InterPAN
+     */
+
+    public abstract setChannelInterPAN(channel: number): Promise<void>;
+
+    public abstract sendZclFrameInterPANToIeeeAddr(zclFrame: Zcl.Frame, ieeeAddress: string): Promise<void>;
+
+    public abstract sendZclFrameInterPANBroadcast(zclFrame: Zcl.Frame, timeout: number, disableResponse: false): Promise<AdapterEvents.ZclPayload>;
+    public abstract sendZclFrameInterPANBroadcast(zclFrame: Zcl.Frame, timeout: number, disableResponse: true): Promise<undefined>;
+    public abstract sendZclFrameInterPANBroadcast(
+        zclFrame: Zcl.Frame,
+        timeout: number,
+        disableResponse: boolean,
+    ): Promise<AdapterEvents.ZclPayload | undefined>;
+
+    public abstract restoreChannelInterPAN(): Promise<void>;
+}
+
+export default Adapter;

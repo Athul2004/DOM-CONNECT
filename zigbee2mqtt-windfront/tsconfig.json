@@ -1,0 +1,21 @@
+{
+    "compilerOptions": {
+        "composite": true,
+        "outDir": "./dist",
+        "moduleResolution": "bundler",
+        "module": "esnext",
+        "target": "esnext",
+        "lib": ["ESNext", "DOM"],
+        "removeComments": true,
+        "sourceMap": true,
+        "jsx": "react-jsx",
+        "experimentalDecorators": true,
+        "allowSyntheticDefaultImports": true,
+        "esModuleInterop": true,
+        "strictNullChecks": true,
+        "resolveJsonModule": true,
+        "checkJs": true,
+        "skipLibCheck": true
+    },
+    "include": ["./src/**/*", "./src/**/*.json", "package.json"]
+}

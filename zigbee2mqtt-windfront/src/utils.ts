@@ -1,0 +1,170 @@
+import { saveAs } from "file-saver";
+import { API_URLS } from "./store.js";
+import type { AnySubFeature, BasicFeature, Device, FeatureWithAnySubFeatures, FeatureWithSubFeatures, Group, LastSeenConfig } from "./types.js";
+
+// #region Compute
+
+export const scale = (inputY: number, yRange: Array<number>, xRange: Array<number>): number => {
+    const [xMin, xMax] = xRange;
+    const [yMin, yMax] = yRange;
+
+    const percent = (inputY - yMin) / (yMax - yMin);
+    return percent * (xMax - xMin) + xMin;
+};
+
+export const randomString = (len: number): string =>
+    Math.random()
+        .toString(36)
+        .slice(2, 2 + len);
+
+export const getObjectFirstKey = <T extends object>(obj: T): string | undefined => {
+    for (const key in obj) {
+        return key;
+    }
+};
+
+export const isEmptyObject = <T extends object>(obj: T): boolean => {
+    for (const _k in obj) {
+        return false;
+    }
+
+    return true;
+};
+
+/**
+ * For use with URL params.
+ * Always return a valid numeric source index to prevent issues with shallow `useAppStore`.
+ * Should `navigate` if the source index isn't actually valid
+ */
+export const getValidSourceIdx = (sourceIdx: string | undefined): [numSourceIdx: number, valid: boolean] => {
+    if (!sourceIdx) {
+        // valid here, since just falling back to default
+        return [0, true];
+    }
+
+    const numSourceIdx = Number(sourceIdx);
+
+    return Number.isNaN(numSourceIdx) || !API_URLS[numSourceIdx] ? [0, false] : [numSourceIdx, true];
+};
+
+export const normalizeDefinitionModel = (model: string): string => {
+    const find = "[/| |:]";
+    const re = new RegExp(find, "g");
+
+    return model.replace(re, "_");
+};
+
+// #endregion
+
+// #region Format/Convert
+
+export const stringifyWithUndefinedAsNull = (data: Record<string, unknown>): string => JSON.stringify(data, (_k, v) => (v === undefined ? null : v));
+
+export const getLastSeenEpoch = (lastSeen: unknown, lastSeenConfig: LastSeenConfig): number | undefined => {
+    if (!lastSeen || lastSeenConfig === "disable") {
+        return undefined;
+    }
+
+    if (lastSeenConfig === "ISO_8601" || lastSeenConfig === "ISO_8601_local") {
+        return typeof lastSeen === "string" ? Date.parse(lastSeen) : undefined;
+    }
+
+    if (lastSeenConfig === "epoch") {
+        return typeof lastSeen === "number" ? lastSeen : undefined;
+    }
+
+    console.error(`Unknown last_seen type ${lastSeenConfig}`);
+
+    return undefined;
+};
+
+export const toHex = (input: number, padding = 4): string => {
+    const padStr = "0".repeat(padding);
+    return `0x${(padStr + input.toString(16)).slice(-1 * padding).toUpperCase()}`;
+};
+
+// #endregion
+
+// #region Device/Group
+
+export function isDevice(entity: Device | Group): entity is Device {
+    return !("members" in entity);
+}
+
+export function isGroup(entity: Device | Group): entity is Group {
+    return "members" in entity;
+}
+
+export const getEndpoints = (entity?: Device | Group | null): Set<string | number> => {
+    const endpoints = new Set<string | number>();
+
+    if (!entity) {
+        return endpoints;
+    }
+
+    if (isDevice(entity)) {
+        for (const key in entity.endpoints) {
+            endpoints.add(Number.parseInt(key, 10));
+        }
+
+        if (entity.definition?.exposes) {
+            for (const expose of entity.definition.exposes) {
+                if (expose.endpoint) {
+                    endpoints.add(expose.endpoint);
+                }
+            }
+        }
+    } else {
+        for (const member of entity.members) {
+            endpoints.add(member.endpoint);
+        }
+    }
+
+    return endpoints;
+};
+
+type ExposeValidateFn = (expose: BasicFeature | FeatureWithSubFeatures) => boolean;
+
+export const parseAndCloneExpose = (
+    expose: BasicFeature | FeatureWithSubFeatures,
+    validateFn: ExposeValidateFn,
+): FeatureWithAnySubFeatures | undefined => {
+    if (!validateFn(expose)) {
+        return undefined;
+    }
+
+    if ("features" in expose && expose.features && expose.features.length > 0) {
+        const features: AnySubFeature[] = [];
+
+        for (const subFeature of expose.features) {
+            const validFeature = parseAndCloneExpose(subFeature, validateFn);
+
+            if (validFeature && !features.some((f) => f.property === validFeature.property)) {
+                features.push(validFeature);
+            }
+        }
+
+        return { ...expose, features };
+    }
+
+    return { ...expose };
+};
+
+// #endregion
+
+// #region Browser
+
+export const downloadAsZip = async (data: Record<string, unknown>, filename: string) => {
+    const { strToU8, zip } = await import("fflate");
+    const content = await new Promise<Uint8Array<ArrayBuffer>>((resolve, reject) => {
+        // `fflate` deflates at level 6 by default, matching what `JSZip` produced for `compression: "DEFLATE"`,
+        // and always allocates a plain `ArrayBuffer`, never a `SharedArrayBuffer`, so it is a valid `BlobPart`
+        zip({ [filename]: strToU8(JSON.stringify(data, null, 4)) }, (error, zipped) =>
+            error ? reject(error) : resolve(zipped as Uint8Array<ArrayBuffer>),
+        );
+    });
+
+    saveAs(new Blob([content], { type: "application/zip" }), `${filename}.zip`);
+};
+
+// #endregion

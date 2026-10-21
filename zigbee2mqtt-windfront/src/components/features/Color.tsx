@@ -1,0 +1,50 @@
+import { memo, useCallback, useMemo } from "react";
+import type { AnyColor, ColorFeature } from "../../types.js";
+import ColorEditor from "../editors/ColorEditor.js";
+import { getDeviceGamut } from "../editors/index.js";
+import type { BaseFeatureProps } from "./index.js";
+
+type ColorProps = BaseFeatureProps<ColorFeature>;
+
+const Color = memo((props: ColorProps) => {
+    const {
+        device,
+        deviceValue,
+        feature: { name, features, property },
+        onChange,
+        minimal,
+    } = props;
+
+    const value = useMemo(() => {
+        const val: Record<string, string | number> = {};
+        const sanitizedDeviceValue = (deviceValue != null && typeof deviceValue === "object" ? deviceValue : {}) as Record<string, string>;
+
+        for (const innerFeature of features) {
+            // just in case the number comes in as string
+            const propValue = Number.parseFloat(sanitizedDeviceValue[innerFeature.name]);
+
+            val[innerFeature.name as keyof AnyColor] = Number.isNaN(propValue) ? 0 : propValue;
+        }
+
+        return val as AnyColor;
+    }, [deviceValue, features]);
+
+    const gamut = useMemo(() => {
+        if (device.definition) {
+            return getDeviceGamut(device.definition.vendor, device.definition.description);
+        }
+
+        return "cie1931";
+    }, [device.definition]);
+
+    const onEditorChange = useCallback(
+        async (color: AnyColor) => {
+            await onChange({ [property ?? "color"]: color });
+        },
+        [property, onChange],
+    );
+
+    return <ColorEditor onChange={onEditorChange} value={value} format={name} minimal={minimal} gamut={gamut} />;
+});
+
+export default Color;
